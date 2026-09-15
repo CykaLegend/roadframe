@@ -40,6 +40,13 @@ android {
         noCompress += "tflite"
     }
 
+    packaging {
+        // Compress the native library and DEX inside the APK (Android unpacks them at install).
+        // Halves the download for sideloading; runtime behaviour is unchanged.
+        jniLibs.useLegacyPackaging = true
+        dex.useLegacyPackaging = true
+    }
+
     splits {
         abi {
             isEnable = true
