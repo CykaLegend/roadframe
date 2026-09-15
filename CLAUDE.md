@@ -9,6 +9,8 @@ Galaxy S25 Ultra. Version 0.1.0-beta was generated on 2026-09-13; this file reco
 1. If `HANDOUT.md` exists, read it completely first. It is the master specification and outranks
    everything else in this file.
 2. Read `README.md`, then every file under `app/src/main/java/be/roadframe/coach/`.
+   `CoachEngine`, `PoseMath`, `SubjectTracker` and `ShotCategory` are pure Kotlin: change them
+   with their tests in `app/src/test`.
 3. Build the task list from the handout and confirm it with Nicolas before editing.
 
 ## Build and test
@@ -18,16 +20,24 @@ Galaxy S25 Ultra. Version 0.1.0-beta was generated on 2026-09-13; this file reco
 - Do not add the INTERNET permission unless the handout asks for the optional online coach; the
   manifest strips it on purpose.
 
-## Known issues found in review
-1. `LevelSensor` computes roll from raw device axes, `atan2(x, y)`. In landscape roll reads about
-   90°, so `CoachEngine` returns ROTATE_LEFT/RIGHT forever. Fix: subtract the display rotation
-   (Surface.ROTATION_90 = 90°, ROTATION_270 = 270°) before reporting, and expose pitch as well
-   (camera pointing down = positive) from the same gravity vector.
-2. `VehicleAnalyzer.analyze` copies `planes[0].buffer` into a bitmap assuming no row padding.
-   When `rowStride != width * 4` every frame is skewed and the detector sees garbage. Fix: use
-   `imageProxy.toBitmap()` (CameraX 1.5) or honour rowStride/pixelStride.
-3. Detection runs on the CPU (default delegate, about 93 ms per frame on the S25 Ultra). Try
-   `BaseOptions.setDelegate(Delegate.GPU)` and measure.
+## Known issues found in review (all addressed on 2026-09-15, keep for history)
+1. `LevelSensor` computed roll from raw device axes, so landscape read 90° forever. Now
+   `PoseSensor` + `PoseMath.rollDegrees` add the display rotation and expose pitch; unit-tested
+   for portrait and both landscape rotations.
+2. `VehicleAnalyzer.analyze` ignored the RGBA row stride. Now `imageProxy.toBitmap()`, and the
+   bitmap is rotated upright before inference so boxes come back in screen orientation.
+3. Detection ran on the CPU only. Now a GPU switch under `?` loads the float16 model with
+   `Delegate.GPU` (falls back to CPU). Measure both on the phone; the stats line shows the ms.
+
+## Current architecture (0.2.0)
+- `PoseSensor` (gravity + game rotation vector, 200 Hz, own thread) → `Pose`.
+- `VehicleAnalyzer` (about 10 Hz) → `SubjectTracker.onDetection` with the pose at capture time.
+- `Choreographer` tick (about 60 Hz) → `SubjectTracker.current` predicts the box from the
+  heading and pitch change → `CoachEngine.evaluate` → `CoachOverlayView`.
+- `ShotCategory` holds the per-shot geometry and the brief. `CoachStructure` is the selectable
+  order of rules. `CoachPrefs` persists the choices.
+- ARCore is not used: it takes the camera and its shared-camera mode needs Camera2, not CameraX.
+  Camera height therefore comes from pitch only ("LOWER" when the phone points down).
 
 ## Agreed direction
 - Two clocks. Sensors (gravity plus rotation vector, up to 200 Hz) drive level, pitch and viewing
