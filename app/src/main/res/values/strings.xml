@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">RoadFrame</string>
+    <string name="brand_name">ROADFRAME</string>
+    <string name="offline_badge">ON-DEVICE  •  OFFLINE</string>
+    <string name="subject_chip">SUBJECT • %1$s</string>
+    <string name="mode_chip">MODE • %1$s</string>
+</resources>

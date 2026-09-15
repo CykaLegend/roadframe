@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="color-scheme" content="light">
+<title>Shotlist: real-time car photography coach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#EEF0EC; --panel:#FFFFFF; --ink:#1B1F23; --ink-2:#585E63; --line:#D3D7D1;
+  --amber:#E9A400; --amber-ink:#7A5400; --amber-soft:#FFF1CC; --green:#2E7A45; --green-soft:#E1F0E5; --go:#4CD47A;
+  --glass:rgba(20,24,28,.72);
+  --display:'Barlow Condensed','Arial Narrow','Roboto Condensed',system-ui,sans-serif;
+  --body:'Barlow','Roboto','Segoe UI',system-ui,sans-serif;
+  --radius:10px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.45;-webkit-text-size-adjust:100%}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+.wrap{max-width:520px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column}
+header{padding:18px 18px 10px}
+.brand{font-family:var(--display);font-weight:700;font-size:36px;letter-spacing:-.01em;line-height:1}
+.brand small{display:block;font-family:var(--body);font-weight:500;font-size:14px;color:var(--ink-2);margin-top:4px}
+.tabs{display:flex;margin:0 18px 14px;border:2px solid var(--ink);border-radius:var(--radius);overflow:hidden;background:var(--panel)}
+.tabs button{flex:1;border:0;background:transparent;padding:12px 0;font-family:var(--display);font-size:21px;font-weight:600;min-height:48px}
+.tabs button[aria-selected="true"]{background:var(--ink);color:#fff}
+main{padding:0 18px 40px;flex:1}
+h1{font-family:var(--display);font-weight:700;font-size:38px;line-height:1;margin:6px 0 10px;letter-spacing:-.01em}
+h2{font-family:var(--display);font-weight:600;font-size:26px;line-height:1.05;margin:24px 0 8px}
+h3{font-family:var(--display);font-weight:600;font-size:22px;line-height:1.1;margin:18px 0 6px}
+p{margin:0 0 12px} ol{margin:0 0 12px}
+.muted{color:var(--ink-2)} .small{font-size:15px} .lede{font-size:18px;margin-bottom:16px}
+.choices{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 8px}
+.chip{border:2px solid var(--line);background:var(--panel);border-radius:999px;padding:9px 15px;font-weight:500;min-height:44px}
+.chip[aria-pressed="true"]{border-color:var(--ink);background:var(--ink);color:#fff}
+.note{background:var(--amber-soft);border-left:4px solid var(--amber);padding:10px 14px;border-radius:0 var(--radius) var(--radius) 0;margin:10px 0 6px;font-size:16px}
+.group{margin-top:22px}
+.row{width:100%;display:grid;grid-template-columns:44px 1fr auto;align-items:center;gap:12px;padding:14px 0;border:0;border-top:1px solid var(--line);background:transparent;text-align:left;min-height:64px}
+.group .row:last-child{border-bottom:1px solid var(--line)}
+.num{font-family:var(--display);font-size:30px;font-weight:700;line-height:1}
+.row.done .num{color:var(--green)}
+.row .name{display:block;font-family:var(--display);font-size:22px;font-weight:600;line-height:1.05}
+.row .tag{display:block;font-size:14px;color:var(--ink-2);margin-top:2px}
+.score{font-family:var(--display);font-size:22px;font-weight:700;padding:4px 10px;border-radius:6px;background:var(--amber-soft);color:var(--amber-ink)}
+.score.done{background:var(--green-soft);color:var(--green)}
+.chev{font-size:26px;color:var(--ink-2);padding-right:6px}
+details{border-top:1px solid var(--line);margin-top:10px}
+summary{cursor:pointer;padding:10px 0;font-weight:600;color:var(--amber-ink);list-style:none;min-height:44px;display:flex;align-items:center;gap:8px}
+summary::-webkit-details-marker{display:none}
+summary::before{content:'+';font-family:var(--display);font-size:26px;font-weight:600;width:16px;line-height:0}
+details[open] summary::before{content:'\2013'}
+.setup summary{font-family:var(--display);font-size:24px;color:var(--ink);padding:12px 0}
+.kv{display:grid;grid-template-columns:minmax(100px,32%) 1fr;gap:6px 12px;font-size:16px;margin:8px 0 12px}
+.kv b{font-weight:600}
+.checks{list-style:none;padding:0;margin:8px 0}
+.checks li{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line)}
+.checks li:last-child{border-bottom:1px solid var(--line)}
+.checks input{width:24px;height:24px;margin:2px 0 0;accent-color:var(--ink);flex:none}
+.actions{display:flex;gap:10px;margin-top:22px}
+.btn{flex:1;border:2px solid var(--ink);background:var(--ink);color:#fff;border-radius:var(--radius);padding:13px 14px;font-family:var(--display);font-size:21px;font-weight:600;min-height:52px;text-align:center;text-decoration:none;display:flex;align-items:center;justify-content:center}
+.btn.ghost{background:transparent;color:var(--ink)}
+.btn.amber{background:var(--amber);border-color:var(--amber);color:var(--ink)}
+.link{background:none;border:0;padding:8px 0;color:var(--amber-ink);font-weight:600;text-decoration:underline;min-height:44px}
+.field{display:flex;gap:8px;margin:6px 0 4px}
+.field input{flex:1;min-width:0;border:2px solid var(--line);border-radius:var(--radius);padding:10px 12px;font:inherit;background:var(--panel)}
+.field button{border:2px solid var(--ink);background:var(--ink);color:#fff;border-radius:var(--radius);padding:0 14px;font-family:var(--display);font-size:19px;font-weight:600}
+.diagram{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:8px;margin:8px 0 12px}
+.diagram svg{width:100%;height:auto;display:block}
+.caption{font-size:15px;color:var(--ink-2);padding:6px 6px 2px}
+.preview{width:100%;border-radius:var(--radius);display:block;margin:8px 0 14px;background:#111}
+.verdict{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:center;margin:8px 0 14px}
+.big{font-family:var(--display);font-size:72px;font-weight:700;line-height:.9;font-variant-numeric:tabular-nums}
+.big small{font-size:22px;color:var(--ink-2);font-weight:600}
+.word{font-family:var(--display);font-size:24px;font-weight:600;line-height:1.1}
+.fix{border-left:4px solid var(--amber);padding:6px 12px;margin:10px 0}
+.fix b{display:block;font-family:var(--display);font-size:21px;font-weight:600;line-height:1.1;margin-bottom:2px}
+.fix .why{color:var(--ink-2);font-size:15px;margin-bottom:4px}
+.keep{border-left:4px solid var(--green);padding:6px 12px;margin:10px 0}
+.spin{display:inline-block;width:16px;height:16px;border:3px solid var(--line);border-top-color:var(--amber);border-radius:50%;animation:spin .8s linear infinite;margin-right:10px;vertical-align:-2px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.lesson{border-top:1px solid var(--line);margin-top:0}
+.lesson summary{font-family:var(--display);font-size:24px;font-weight:600;color:var(--ink);padding:14px 0}
+.lesson p,.lesson ol{font-size:16px}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:999px;font-weight:500;opacity:0;transition:opacity .2s;pointer-events:none;z-index:50}
+.toast.show{opacity:1}
+
+/* ---- Live viewfinder ---- */
+#live{position:fixed;inset:0;background:#000;color:#fff;display:none;z-index:20;overflow:hidden}
+#live.on{display:block}
+#cam{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+#ov{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.topbar{position:absolute;top:0;left:0;right:0;padding:calc(10px + env(safe-area-inset-top)) 12px 26px;display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:linear-gradient(rgba(0,0,0,.6),rgba(0,0,0,0))}
+.pill{background:var(--glass);color:#fff;border:0;border-radius:999px;padding:8px 12px;font-weight:600;font-size:14px;min-height:36px;white-space:nowrap}
+.pill.on{background:var(--amber);color:var(--ink)}
+.pill.ok{background:rgba(46,122,69,.9)}
+.pill.warn{background:rgba(233,164,0,.95);color:var(--ink)}
+.pill.title{font-family:var(--display);font-size:19px;padding:6px 12px;flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis}
+.coach{position:absolute;left:0;right:0;bottom:0;padding:26px 14px calc(12px + env(safe-area-inset-bottom));background:linear-gradient(rgba(0,0,0,0),rgba(0,0,0,.82) 30%)}
+.say{font-family:var(--display);font-size:34px;font-weight:700;line-height:1;margin:0 0 8px;text-shadow:0 1px 3px rgba(0,0,0,.6);min-height:34px}
+.say.go{color:var(--go)}
+.moves{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:6px}
+.moves span{background:var(--glass);border-radius:8px;padding:6px 10px;font-size:14px;font-weight:500}
+.moves span.ai{border-left:3px solid var(--amber)}
+.status{font-size:12px;color:rgba(255,255,255,.8);margin-bottom:8px;min-height:15px;font-variant-numeric:tabular-nums}
+.ctrl{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px}
+.ctrl .side{display:flex;gap:8px;flex-wrap:wrap} .ctrl .side.r{justify-content:flex-end}
+.shutter{width:76px;height:76px;border-radius:50%;border:5px solid #fff;background:rgba(255,255,255,.25);justify-self:center;padding:0;position:relative}
+.shutter:active{background:#fff}
+.shutter.go{border-color:var(--go)}
+#sheet{position:absolute;inset:0;background:var(--paper);color:var(--ink);overflow:auto;padding:14px 18px 40px;display:none}
+#sheet.on{display:block}
+#camErr{position:absolute;inset:0;display:none;align-items:center;justify-content:center;padding:24px;background:#111;overflow:auto}
+#camErr.on{display:flex}
+#camErr div{max-width:420px}
+#camErr .btn{margin-top:10px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><div class="brand">Shotlist<small>Real-time car photography coach</small></div></header>
+  <nav class="tabs" aria-label="Sections">
+    <button data-act="tab" data-v="pick" aria-selected="true">Shots</button>
+    <button data-act="tab" data-v="learn" aria-selected="false">Learn</button>
+  </nav>
+  <main id="app"></main>
+</div>
+
+<div id="live" aria-label="Live viewfinder">
+  <video id="cam" autoplay playsinline muted></video>
+  <canvas id="ov"></canvas>
+  <div class="topbar">
+    <button class="pill" data-act="closeLive">&#8249; Shots</button>
+    <span class="pill title" id="liveTitle"></span>
+    <button class="pill" data-act="brief">Brief</button>
+    <span id="lensCtl"></span>
+  </div>
+  <div class="coach">
+    <p class="say" id="say">Starting the camera</p>
+    <div class="moves" id="moves"></div>
+    <div class="status" id="status"></div>
+    <div class="ctrl">
+      <div class="side"><button class="pill" id="autoBtn" data-act="auto">Coach: on</button></div>
+      <button class="shutter" id="shutter" data-act="shoot" aria-label="Take the photo"></button>
+      <div class="side r"><button class="pill" data-act="ask">Ask now</button></div>
+    </div>
+  </div>
+  <div id="sheet"></div>
+  <div id="camErr"><div id="camErrBody"></div></div>
+</div>
+<input type="file" id="fileGal" accept="image/*" hidden>
+<div class="toast" id="toast" role="status"></div>
+
+<script type="module">
+/* ========= Settings you may edit ========= */
+const API_KEY = '';                 // Optional. Outside Claude, paste your Anthropic API key here (personal use only: anyone with this file can read it).
+const MODEL = 'claude-sonnet-4-6';  // 'claude-haiku-4-5-20251001' is faster and cheaper for the live loop if you use your own key.
+const AI_INTERVAL = 3000;           // ms between coach checks (the slow brain). Everything else runs at frame rate.
+const DET_INTERVAL = 110;           // ms between on-device car detections
+const LEVEL_TOL = 1.5, PITCH_TOL = 6, POS_TOL = 0.05, SIZE_TOL = 0.12;
+const MP_VERSION = '1.0.1';
+const MP_MODEL = 'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite';
+const VEHICLE = new Set(['car', 'truck', 'bus']);
+
+const LIGHT = {
+  golden:   {name:'Golden hour', verdict:'The best light there is: low, warm, soft. Shoot the exteriors now and the details afterwards.', cap:'Sun low and over your shoulder, so the light comes from the side-front. With a polarizer the effect is strongest at 90\u00B0 to the sun.', iso:'50', shutter:'1/250 s', wb:'5200 K'},
+  overcast: {name:'Overcast', verdict:'A giant softbox: even, gentle light with no hot spots. Perfect for dark paint and details. The sky will be grey, so keep it small in the frame.', cap:'Cloud: the light comes from everywhere, so direction hardly matters. Keep the grey sky small in the frame.', iso:'100', shutter:'1/250 s', wb:'6000 K'},
+  harsh:    {name:'Harsh midday sun', verdict:'The worst light: hard shadows, white hot spots on the paint, and you in every reflection. Find open shade (the shadow side of a big building, under a bridge) with the car facing the open sky. Or shoot the details now and come back at golden hour.', cap:'Sun high and hard. Put the car in open shade facing the open sky. The diagram shows where the sun would sit if you cannot.', iso:'50', shutter:'1/1000 s', wb:'5500 K'},
+  blue:     {name:'Blue hour', verdict:'20 to 40 minutes after sunset: deep blue sky, glowing lights. The phone must be perfectly still, so rest it on something solid and use the 2-second timer.', cap:'The bright part of the sky sits behind the car; the car\u2019s lights are on.', iso:'100', shutter:'1/8 s to 1 s', wb:'4000 K'},
+  garage:   {name:'Indoors', verdict:'Mixed lights (tubes, LED strips, daylight from a door) make colours ugly. Switch off what you can, keep one big light source, and shoot RAW so the colour can be fixed later.', cap:'One light source, the others off. Colour will need fixing in editing.', iso:'200 to 400', shutter:'1/60 s', wb:'Auto, fix later in RAW'}
+};
+const COLOUR = {
+  dark:   {note:'Dark paint is a mirror on wheels. Reflections are the whole game: plain surroundings, polarizer, and keep a hint of gloss or the shape disappears.'},
+  light:  {note:'Light paint burns out first. Drop the exposure to about \u22120.7 so the bonnet keeps detail; overcast light is your friend.'},
+  colour: {note:'Colour holds up well in soft light. In full sun it goes cartoon-bright: polarizer plus \u22120.3 exposure keeps it honest.'}
+};
+const SHOTS = [
+  {id:'front34', cfg:{theta:[-45,45], fill:0.72, cx:0.5, cy:0.5, low:true, lead:true}, n:1, group:'ess', name:'Front three-quarter', tag:'The hero shot', cam:-45, wheel:24, dist:'8 to 12 m', height:'Headlight height (crouch)', lens:'3x',
+   why:'The cover shot. You see the face and the flank at once, so the car reads long, wide and planted.',
+   park:'Nose towards you, on a flat clean surface with open space in front of the car. Turn the steering so the front tyres point away from you: that swings the face of the near wheel towards the camera. Check on screen: spokes good, tread bad.',
+   stand:'Walk to the front corner, then swing out until you are about 45\u00B0 off the nose. Back up 8 to 12 m and zoom to 3x. No room? Use 2x and back up as far as you can. Never 0.6x for this one.',
+   check:['Whole car in the frame with a little air around it','All four wheels visible','Near front wheel shows its face, not its tread','Ground line level','Nothing growing out of the roof','You are not reflected in the door','More space in front of the nose than behind the tail']},
+  {id:'rear34', cfg:{theta:[-135,135], fill:0.72, cx:0.5, cy:0.5, low:true, lead:true}, n:2, group:'ess', name:'Rear three-quarter', tag:'The walking-away shot', cam:-135, wheel:-14, dist:'8 to 12 m', height:'Tail-light height', lens:'3x',
+   why:'The second most-used angle in any feature. Hips, tail lights and exhaust, and on an estate the long roofline finally gets its moment.',
+   park:'Back corner towards you. Point the front tyres slightly towards your side so the far front wheel still shows a bit of rim; dead straight is fine if that wheel is hidden anyway.',
+   stand:'About 45\u00B0 off the rear corner, 8 to 12 m back, zoomed to 3x. Same crouch as the hero shot.',
+   check:['Whole car in the frame with air around it','All four wheels visible','Roofline runs clean to the edge of the frame','Ground line level','Background plain behind the tail','You are not reflected in the rear quarter panel']},
+  {id:'side', cfg:{theta:[-90,90], fill:0.84, cx:0.5, cy:0.5, low:true, tolAngle:6}, n:3, group:'ess', name:'Side profile', tag:'Pure shape, zero forgiveness', cam:-90, wheel:0, dist:'15 m or more', height:'Door-handle height', lens:'3x',
+   why:'The catalogue shot: the silhouette with nothing to hide behind. Any tilt or distortion shows instantly, which is why it looks so good when it is right.',
+   park:'Car exactly parallel to a plain wall or the horizon. Wheels dead straight. Level ground: on a slope the car looks like it is sinking at one end.',
+   stand:'Stand square to the middle of the car (the gap between the two doors). Go far, 15 m or more, and zoom to 3x. Distance is what keeps both wheels round instead of egg-shaped.',
+   check:['Roofline and sills parallel to the frame edges','Both wheels perfectly round','Car centred, equal space left and right','Plain background: no poles, bins or other cars','Your reflection out of the doors']},
+  {id:'front', cfg:{theta:[0], fill:0.62, cx:0.5, cy:0.5, low:true, tolAngle:6}, n:4, group:'ess', name:'Front straight-on', tag:'The poster', cam:0, wheel:0, dist:'6 to 10 m', height:'Grille height (sit on the ground)', lens:'2x or 3x',
+   why:'Symmetry makes a car look aggressive and expensive. This is the one that gets printed big.',
+   park:'Nose pointing straight at you, wheels dead straight. A road or lane whose lines run into the distance makes a free frame.',
+   stand:'Dead centre of the nose, 6 to 10 m back. Put the badge on the centre vertical grid line and both headlights on the same horizontal line. Get as low as you can.',
+   check:['Badge on the centre line of the grid','Both headlights level','Both front wheels showing equally','Mirrors, tyres and lights symmetrical','Viewpoint really low']},
+  {id:'rear', cfg:{theta:[180], fill:0.62, cx:0.5, cy:0.5, low:true, tolAngle:6}, n:5, group:'ess', name:'Rear straight-on', tag:'The exhaust and the badge', cam:180, wheel:0, dist:'6 to 10 m', height:'Tail-light height', lens:'2x or 3x',
+   why:'Completes the set. Shows the width of the car and the design of the tail lights; on a fast car, the exhausts.',
+   park:'Tail pointing straight at you, wheels dead straight, boot fully closed.',
+   stand:'Dead centre, 6 to 10 m back, grid on, badge on the centre line. Low again.',
+   check:['Badge on the centre line','Both tail lights level','Both rear wheels showing equally','Exhausts inside the frame with room to spare','Nothing reflected in the rear window but sky']},
+  {id:'wheel', cfg:{noTrack:true}, n:6, group:'det', name:'Wheel and brake', tag:'Detail', cam:-90, close:true, wheel:0, dist:'1.5 m', height:'Hub height (kneel)', lens:'2x or 3x',
+   why:'Rims are the most photographed part of any car. Done right, this shot alone sells the whole set.',
+   park:'Roll the car until a spoke points straight up and the centre-cap logo reads level. Tyre dressing on, brake dust wiped off the caliper.',
+   stand:'Kneel level with the hub, slightly ahead of the wheel, so you see a bit of tyre depth and the caliper through the spokes. Zoom in rather than shoving the phone into the arch.',
+   check:['Logo level, spoke at 12 o\u2019clock','Whole wheel in the frame, arch included','Caliper visible through the spokes','No photographer reflected in the rim','Tyre sidewall clean']},
+  {id:'lamp', cfg:{noTrack:true}, n:7, group:'det', name:'Headlight and badge', tag:'Detail', cam:-35, close:true, wheel:0, dist:'1 m', height:'Headlight height', lens:'3x, close',
+   why:'The face of the car, up close. The shot that shows the design work.',
+   park:'Any position. Here you move the reflection by moving yourself, not the car.',
+   stand:'About 1 m from the lamp, at a slight angle. Watch the reflection of the sky in the lens cover and move until it sits as one clean highlight, not a mess of trees. Rotate the polarizer to taste.',
+   check:['Sharp on the lamp detail','One clean highlight, no clutter in the reflection','A body line leads into or out of the frame','No fingerprints or dust on the lens']},
+  {id:'interior', cfg:{noTrack:true}, n:8, group:'det', name:'Interior', tag:'Detail', cam:null, wheel:0, dist:'From the open door or the back seat', height:'Seat height', lens:'1x',
+   why:'Where the owner actually lives. Editors always ask for one.',
+   park:'Straighten the steering wheel, wipe the screen, straighten the mats, and take out everything that is not part of the car.',
+   stand:'From outside: door open, phone at seat height, looking across the dash towards the far door. Or from the back seat towards the windscreen. Auto HDR on, because the windows are far brighter than the cabin.',
+   check:['Steering wheel straight','Screen and glass wiped','Nothing loose anywhere in the cabin','Exposure set for the dash; windows may go bright','Door pillars vertical, not leaning']},
+  {id:'scene', cfg:{theta:[-45,45], fill:0.24, cx:0.36, cy:0.58, low:false, tolAngle:15}, n:9, group:'env', name:'Car in a place', tag:'The wide one', cam:-40, wheel:24, dist:'15 to 25 m', height:'Chest height', lens:'1x, or 0.6x with the car near the centre',
+   why:'The picture that says where you were. Small car, big scene, and the only shot where the wide lens is welcome.',
+   park:'Find the scene first: a road curving away, a big wall, a viewpoint, a harbour. Then park the car small in it, on a rule-of-thirds point, not dead centre. Front tyres turned away from you, like the hero shot.',
+   stand:'Back off until the car takes up a quarter of the frame or less. If you use 0.6x, keep the car near the middle: the edges of an ultra-wide stretch everything.',
+   check:['Car on a rule-of-thirds point','Horizon level and not cutting the frame in half','Nothing distracting between you and the car','Sky and ground both hold detail','The scene is worth the space you gave it']},
+  {id:'rolling', cfg:{noTrack:true, noLevel:true}, n:10, group:'adv', name:'Rolling shot', tag:'Advanced: needs a second car', cam:-90, wheel:0, dist:'Second car, same speed, 30 to 50 km/h', height:'Passenger window, elbows braced on the door', lens:'1x',
+   why:'The wheels spin, the road streaks, the car stays sharp. The shot that looks the most like a magazine and takes the most tries.',
+   park:'This is a driving shot. You need a second car, a driver for each, a quiet straight road, and matching speed of 30 to 50 km/h. The passenger shoots from the window. The driver only drives.',
+   stand:'Camera car alongside or slightly ahead. Brace your elbows on the door frame. Hold the shutter for a burst and keep the car in exactly the same spot on the screen as you drive.',
+   check:['Wheels blurred, body sharp','Background streaked, not frozen','Car level in the frame','Whole car in the frame','Speeds really matched']},
+  {id:'blue', cfg:{theta:[-45,45], fill:0.72, cx:0.5, cy:0.5, low:true, lead:true}, n:11, group:'adv', name:'Blue hour, lights on', tag:'Advanced: 20 to 40 minutes after sunset', cam:-45, wheel:24, dist:'8 to 12 m', height:'Headlight height', lens:'3x',
+   why:'Deep blue sky, glowing lights, the paint reflecting the last light. The moody closer of the set.',
+   park:'Same as the hero shot, but 20 to 40 minutes after sunset. Side lights or daytime running lights on, never full beam. Face the brightest part of the sky.',
+   stand:'Same 45\u00B0 spot, but now the phone must be perfectly still: a mini tripod, a wall, a bin, anything solid. Use the 2-second timer so the tap does not shake it.',
+   check:['Sky deep blue, not black','Lights glowing, not blown out','Car sharp, no shake','Sky reflected on the roof and bonnet','Wheels turned as in the hero shot']}
+];
+const LESSONS = [
+  {t:'Light decides everything', p:['A car is a big shiny object, so what you actually photograph is the light bouncing off it. Same car, same spot: at noon it looks cheap, an hour before sunset it looks like a poster.','Golden hour is the hour after sunrise and the hour before sunset: low, warm, soft light that wraps around the body. Blue hour is the half hour after sunset: the sky turns deep blue and the car\u2019s lights glow, but the phone must stay still. Overcast is a giant softbox, even and gentle, perfect for details and dark paint; keep the grey sky small in the frame. Harsh midday sun means hard shadows, white hot spots on the paint, and you in every reflection: find open shade with the car facing the open sky, or come back later.','Direction matters as much as time. Light from behind you flattens the car. Light from the side draws its shape. Light from behind the car gives a glowing outline. For the hero shots, keep the sun low and over one shoulder, roughly 45\u00B0 to the car.']},
+  {t:'The polarizer, explained', p:['Glossy paint and glass reflect the sky and everything around them. A circular polarizing filter (a clip-on for phones) blocks reflected light coming from one direction. Rotate its front ring and you dial the reflections down by hand.','Clip it over the lens you are actually using (a clip-on covers one lens, so if you switch from 1x to 3x, move it). Rotate slowly while watching the screen; the windscreen goes from mirror to see-through. Stop just before the reflections vanish completely: paint with zero reflection looks flat and dead.','Strongest with the sun at your side, 90\u00B0 to the lens. Pointing into the sun, or with the sun straight behind you, it does almost nothing. It eats about 1.5 stops of light, so in Pro mode go one shutter step slower or raise ISO from 50 to 100. On the 0.6x lens it can paint a dark band across the sky, one more reason to shoot at 3x.']},
+  {t:'Get low, back up, zoom in', p:['Three habits separate phone snapshots from magazine shots. Low: eye level is how everyone sees a parked car; headlight height is how a magazine sees it. Crouch or kneel for every exterior shot.','Back up and zoom: the wide lenses on your phone (0.6x, and even 1x up close) stretch whatever is near the lens. The nearest wheel grows, the far end shrinks, and the car looks like a toy. Stand 10 m away on 3x and the car gets its true proportions back.','Digital zoom past 3x (10x, 30x) is cropping plus guesswork: soft and smeary. Stay on the real lenses: 0.6x, 1x, 3x.']},
+  {t:'The car is a mirror', p:['Everything around a car ends up in its paint: you, the bins, the yellow van behind you. Dark cars show all of it; white cars hide most of it. Before you shoot, look at the paint instead of the car: what is reflected in the doors and bonnet?','Fixes: choose surroundings that reflect cleanly, such as open sky, plain walls or water. Move yourself out of the reflection: crouch lower, step sideways, wear dark clothes. Rotate the polarizer. For headlights and badges, move around until the reflection sits where you want it as one clean highlight.','Free wins: wet ground after rain gives you a mirror under the car, and the empty top floor of a parking garage gives open sky in the paint from every angle.']},
+  {t:'Wheels and stance', p:['Rims are the most-photographed part of a car and the most-fumbled. For three-quarter shots, turn the front tyres so the near wheel shows its face (the spokes), not its tread. The check is on the screen: spokes good, black rubber bad. Front-on and side-on: wheels straight.','Roll the car until a spoke points straight up and the centre-cap logo reads level; it takes ten seconds and every detail shot benefits. Tyre dressing on, brake dust off. Mirrors out, windows up, wipers parked, nothing on the dash, no parking disc, no air freshener.','Lights: off in daylight (a lit daytime running light becomes a white blob), on for blue hour: side lights or daytime running lights, never full beam.']},
+  {t:'Composition', p:['Put the car on a rule-of-thirds line rather than dead centre, except for the front-on and rear-on shots, which want perfect symmetry. Leave more space in front of the car than behind it: room to drive into. Level the horizon with the grid; a sloping ground line makes a parked car look like it is rolling away.','Never cut off a wheel. Cutting the roof can be a choice; cutting a tyre always looks like a mistake. Check all four corners of the frame for junk before you press the shutter. Give the car some air: a little empty space all around beats filling the frame edge to edge.']},
+  {t:'Samsung settings, decoded', p:['Photo mode gets you 90% of the way. Pick 3x, tap the near wheel to focus, long-press to lock focus and exposure, then drag the sun slider slightly down (\u22120.3 for dark paint, \u22120.7 for white) so the highlights on the paint keep their detail. In the camera settings: grid on, scene optimizer off, auto HDR on.','Pro mode (More, then Pro) gives you the dials. ISO is the sensor\u2019s light sensitivity: the lowest setting is the cleanest, so 50 or 100 outdoors. Shutter speed is how long the sensor collects light: 1/250 s freezes a parked car handheld, 1/40 s blurs the wheels on a rolling shot, 1 s at blue hour needs the phone on something solid. White balance is the colour of white: 5200 K for sun, 6000 K for cloud, 4000 K for blue hour; set it once and the whole set matches.','RAW keeps all the sensor data so colour, highlights and shadows can be recovered in editing; JPEG is finished and small. Resolution: the default 12 MP combines pixels for cleaner images; the 50 or 200 MP modes only pay off in bright light with the phone braced. If Pro mode will not let you choose 3x on your Galaxy, the free Expert RAW app from the Galaxy Store gives Pro controls and RAW on every lens.']},
+  {t:'Rolling and panning shots', p:['Rolling shot: two cars, two drivers, one passenger shooting from the window. Quiet straight road, both cars at 30 to 50 km/h, camera car alongside or slightly ahead. Brace your elbows on the door, Pro mode at 1/40 s, burst, and keep the car in the same spot on the screen. The passenger shoots, the driver drives, never on a busy road.','Panning shot, no second car needed: stand at the roadside, the car drives past at 30 km/h, you swing the phone smoothly with it and fire a burst mid-swing at 1/30 to 1/60 s. Expect one keeper in ten. That is normal.']},
+  {t:'Editing in eight moves', p:['The Samsung Gallery editor, Snapseed (free) and Lightroom mobile (free tier) all do this. In order: 1 straighten so the horizon is level; 2 crop to 3:2 or 4:5, keeping air around the car; 3 exposure to taste; 4 highlights down so the paint keeps its shape; 5 shadows up a little so the wheels have detail; 6 white balance matched across the set; 7 clarity or texture a touch, never the slider at 100; 8 remove distractions with the object eraser, then sharpen last.','Colour: saturation plus 5, not plus 40. Black and white works when shape and light are the story: chrome, curves, hard side light, blue-hour silhouettes. Convert, then push the contrast and darken the blues so the sky goes moody.','Export a full-resolution JPEG at high quality for print, and 1080 by 1350 pixels (4:5) for Instagram so it is not squeezed twice.']},
+  {t:'Ten mistakes that shout amateur', list:['Shooting at eye level','Ultra-wide from up close: the toy-car look','Wheels showing tread instead of spokes','The photographer reflected in the door','Midday sun with white hot spots on the bonnet','A pole or tree growing out of the roof','A sloping horizon','A cut-off tyre','Digital zoom past 3x','Saturation and HDR cranked to cartoon levels']}
+];
+
+/* ========= State ========= */
+const $ = s => document.querySelector(s);
+const app = $('#app'), live = $('#live'), video = $('#cam'), ov = $('#ov');
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const KEY = 'shotlist-rt:v1';
+const memStore = {};
+const store = {
+  async get(){ try{ if(window.storage){ const r = await window.storage.get(KEY, false); return r && r.value ? JSON.parse(r.value) : null; } }catch(e){} return memStore.v || null; },
+  async set(v){ memStore.v = v; try{ if(window.storage) await window.storage.set(KEY, JSON.stringify(v), false); }catch(e){} }
+};
+let state = {
+  view:'pick', shot:null, apiKey: API_KEY, firstRun:true, resetArmed:false,
+  ctx:{colour:null, polarizer:null, pro:null, light:null},
+  progress:{}, review:null, liveOn:false, coachOn:true
+};
+/* runtime: everything the fast loop reads and writes */
+const rt = {
+  det:null, detReady:false, detStatus:'Vision: loading model (4 MB, once)', detBusy:false, lastDet:0, fps:0, fpsN:0, fpsT:0,
+  box:null, boxTs:0,
+  roll:0, pitch:0, sensors:false, heading:null,
+  theta:null, thetaHeading:null, thetaTs:0, nose:'unknown',
+  ai:{ts:0, issues:[], wheels:null, height:null, say:'', ready:0, busy:false, timer:null, off:false, msg:''},
+  guide:{headline:'', chips:[], arrows:{}, score:0, shoot:false}, lastDom:0, raf:null, wasShoot:false
+};
+let stream = null, track = null, backCams = [], camIndex = 0, zoomCaps = null, wakeLock = null;
+const ctxComplete = () => !!(state.ctx.colour && state.ctx.polarizer !== null && state.ctx.pro !== null && state.ctx.light);
+const shotById = id => SHOTS.find(s => s.id === id);
+const wrap = d => ((d + 540) % 360) - 180;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+async function load(){
+  const s = await store.get();
+  if(s){ state.ctx = Object.assign(state.ctx, s.ctx || {}); state.progress = s.progress || {}; state.firstRun = false; }
+  render();
+  loadDetector();
+}
+const save = () => store.set({ctx: state.ctx, progress: state.progress});
+
+/* ========= Claude (the slow brain) ========= */
+function isKeyProblem(e){ return /^KEY:/.test(e.message || ''); }
+async function claude(content){
+  const headers = {'Content-Type': 'application/json'};
+  if(state.apiKey){ headers['x-api-key'] = state.apiKey; headers['anthropic-version'] = '2023-06-01'; headers['anthropic-dangerous-direct-browser-access'] = 'true'; }
+  let res;
+  try{ res = await fetch('https://api.anthropic.com/v1/messages', {method:'POST', headers, body: JSON.stringify({model: MODEL, max_tokens: 1000, messages:[{role:'user', content}]})}); }
+  catch(e){ throw new Error('KEY:Coach unreachable from here. Outside Claude, paste an Anthropic API key under Setup. Arrows keep working without it.'); }
+  let data = null; try{ data = await res.json(); }catch(e){}
+  if(!res.ok || (data && data.error)){
+    const msg = (data && data.error && data.error.message) || ('Error ' + res.status);
+    if(res.status === 401 || res.status === 403) throw new Error('KEY:' + msg);
+    throw new Error(msg);
+  }
+  return (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+}
+function parseJSON(text){ const m = String(text).match(/\{[\s\S]*\}/); if(!m) throw new Error('The coach did not answer in the expected format.'); return JSON.parse(m[0]); }
+function briefText(shot){
+  const c = state.ctx;
+  return `Shot: "${shot.name}". Purpose: ${shot.why}
+Park: ${shot.park}
+Stand: ${shot.stand}
+Lens: ${shot.lens}. Camera height: ${shot.height}. Distance: ${shot.dist}.
+Checklist: ${shot.check.join('; ')}.
+Context: car colour ${c.colour || 'unknown'}; light ${c.light ? LIGHT[c.light].name : 'unknown'}; polarizer ${c.polarizer ? 'yes' : 'no'}.`;
+}
+function livePrompt(shot){
+  return `You are the semantic half of a real-time car-photography coach. An on-device detector already handles framing, size, level and camera height at frame rate. You look at one low-resolution viewfinder frame and report what geometry cannot see.
+${briefText(shot)}
+Respond with ONLY a JSON object, no markdown:
+{"car_visible": <true|false>,
+ "angle": <integer -180..180: the direction you view the car from. 0 = straight at the nose, 180 = straight at the tail, 90 = the car's right flank seen fully, -90 = the car's left flank (the driver's door side on a European car), -45 = front three-quarter from the left, 135 = rear three-quarter from the right>,
+ "nose": <"left"|"right"|"toward"|"away": where the nose points in the frame>,
+ "wheels_ok": <true if the near front wheel shows its face (spokes) for three-quarter shots, or wheels are straight for front, rear and side shots; false otherwise>,
+ "height": <"low"|"eye"|"high": the camera height judged from perspective; "low" means around headlight height>,
+ "issues": ["<up to 3 short imperative cues on things a detector cannot judge: wheels, the photographer's reflection, background clutter, light direction, dirt, lights on or off, clipped roofline>"],
+ "say": "<one instruction, at most 8 words>",
+ "ready": <0-100>}`;
+}
+function gradePrompt(shot){
+  return `You are a direct, encouraging car-photography coach for a beginner shooting with a Samsung phone.
+They took this photo for the shot below.
+${briefText(shot)}
+Grade the photo against this brief, based only on what you can see. Assess: angle and camera height; lens distortion; wheel position; light direction and quality; reflections (including the photographer); background clutter; level horizon; framing (cut-off wheels, space in front of the car, air around it); exposure (blown highlights on paint); sharpness. Ignore licence plates and watermarks. Be concrete. If the photo is not a car at all, say so in the headline and score it 0.
+Respond with ONLY a JSON object and nothing else, no markdown:
+{"score": <integer 0-100; 85 or more means magazine-ready>, "headline": "<one plain-English sentence>", "keep": ["<up to 3 things that work>"], "fix": [{"issue": "<what is wrong>", "why": "<one sentence on why it matters>", "do": "<exactly what to do differently next time>"}], "retake": <true if score under 75>, "edit": ["<up to 3 concrete edits in Samsung Gallery, Snapseed or Lightroom mobile>"]}
+Give at most 4 fixes, most important first.`;
+}
+const imageBlock = b64 => ({type:'image', source:{type:'base64', media_type:'image/jpeg', data:b64}});
+
+/* ========= Diagram and settings (Brief sheet) ========= */
+function sunSVG(x, y){ let rays = ''; for(let k = 0; k < 8; k++) rays += `<line x1="0" y1="-13" x2="0" y2="-17" stroke="var(--amber)" stroke-width="2.5" stroke-linecap="round" transform="rotate(${k*45})"/>`; return `<g transform="translate(${x.toFixed(1)} ${y.toFixed(1)})"><circle r="9" fill="var(--amber)"/>${rays}</g>`; }
+function cloudSVG(x, y){ return `<g transform="translate(${x} ${y})" fill="#B7BCB8"><circle cx="-12" cy="4" r="9"/><circle cx="0" cy="-3" r="12"/><circle cx="13" cy="4" r="9"/><rect x="-18" y="4" width="36" height="10" rx="5"/></g>`; }
+function diagramSVG(shot, ctx){
+  if(shot.cam === null) return '';
+  const C = 150, rad = d => d * Math.PI / 180, R = shot.close ? 102 : 122;
+  const cx = C + R * Math.sin(rad(shot.cam)), cy = C - R * Math.cos(rad(shot.cam));
+  const w = shot.wheel || 0, light = ctx.light || 'golden';
+  let sky = '';
+  if(light === 'overcast') sky = cloudSVG(150, 26);
+  else if(light !== 'garage'){ const sunDeg = light === 'blue' ? shot.cam + 180 : (shot.cam === 0 ? -50 : shot.cam === 180 ? 130 : shot.cam === -90 ? -35 : -90); sky = sunSVG(C + 128 * Math.sin(rad(sunDeg)), C - 128 * Math.cos(rad(sunDeg))); }
+  const ang = Math.atan2(C - cy, C - cx), half = rad(13), L = R - 8;
+  const p1 = [cx + L * Math.cos(ang - half), cy + L * Math.sin(ang - half)], p2 = [cx + L * Math.cos(ang + half), cy + L * Math.sin(ang + half)];
+  const lx = Math.max(44, Math.min(256, cx)), ly = cy > C ? cy - 20 : cy + 30;
+  return `<svg viewBox="0 0 300 300" role="img" aria-label="Top view: where to stand relative to the car">
+    <path d="M${cx.toFixed(1)} ${cy.toFixed(1)} L${p1[0].toFixed(1)} ${p1[1].toFixed(1)} L${p2[0].toFixed(1)} ${p2[1].toFixed(1)} Z" fill="var(--amber)" opacity=".2"/>
+    <rect x="104" y="88" width="16" height="30" rx="4" fill="var(--ink)" stroke="var(--amber)" stroke-width="3" transform="rotate(${w} 112 103)"/>
+    <rect x="180" y="88" width="16" height="30" rx="4" fill="var(--ink)" stroke="var(--amber)" stroke-width="3" transform="rotate(${w} 188 103)"/>
+    <rect x="104" y="182" width="16" height="30" rx="4" fill="var(--ink)"/><rect x="180" y="182" width="16" height="30" rx="4" fill="var(--ink)"/>
+    <rect x="112" y="66" width="76" height="168" rx="22" fill="#C9CDC7" stroke="var(--ink)" stroke-width="2"/>
+    <rect x="120" y="104" width="60" height="66" rx="14" fill="#8F959A"/><rect x="124" y="126" width="52" height="24" rx="6" fill="#C9CDC7"/>
+    <ellipse cx="108" cy="114" rx="5" ry="3" fill="var(--ink)"/><ellipse cx="192" cy="114" rx="5" ry="3" fill="var(--ink)"/>
+    <text x="150" y="92" text-anchor="middle" font-size="11" font-weight="600" fill="#585E63" font-family="Barlow, system-ui, sans-serif">front</text>
+    ${sky}
+    <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="12" fill="var(--amber)"/><circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4.5" fill="var(--ink)"/>
+    <text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)" font-family="Barlow, system-ui, sans-serif">${esc(shot.dist)}</text>
+  </svg>`;
+}
+function settingsHTML(shot, ctx){
+  const L = LIGHT[ctx.light || 'golden'], col = ctx.colour || 'dark';
+  const ev = (col === 'light' || ctx.light === 'harsh') ? '\u22120.7' : '\u22120.3';
+  const still = ctx.light === 'blue' || ctx.light === 'garage';
+  const rows = [['Lens', shot.lens]];
+  if(shot.id === 'rolling'){
+    rows.push(['Mode', ctx.pro ? 'More, then Pro' : 'Photo, then hold the shutter for Burst']);
+    if(ctx.pro){ rows.push(['ISO', ctx.polarizer ? '100' : '50']); rows.push(['Shutter', '1/40 s']); rows.push(['White balance', L.wb]); }
+  } else if(ctx.pro){
+    rows.push(['Mode', 'More, then Pro'], ['ISO', L.iso + (ctx.polarizer && !still ? ' (100 with the polarizer on)' : '')], ['Shutter', L.shutter], ['White balance', L.wb], ['Exposure meter', 'Just under 0, so the paint highlights keep detail'], ['Focus', 'Tap the near wheel or headlight'], ['Format', 'RAW on: Pro settings, picture format, RAW and JPEG']);
+  } else {
+    rows.push(['Mode', 'Photo'], ['Focus', 'Tap the near wheel or headlight, then long-press to lock focus and exposure'], ['Exposure', 'Drag the sun slider to about ' + ev], ['HDR', 'Auto']);
+  }
+  if(still) rows.push(['Stability', 'Phone on a mini tripod, a wall or a bin. Timer at 2 s.']);
+  rows.push(['Resolution', '12 MP default. The 50 or 200 MP mode only in bright light with the phone braced.'], ['Scene optimizer', 'Off. It over-sharpens and over-saturates.'], ['Grid', 'On, 3 by 3.']);
+  let html = `<div class="kv">${rows.map(([k, v]) => `<b>${k}</b><span>${v}</span>`).join('')}</div>`;
+  html += ctx.polarizer ? '<h3>Polarizer</h3><p>Clip it over the lens you are using. Rotate the front ring slowly while watching the screen: reflections fade in and out. Stop one notch before they vanish. Strongest with the sun at your side.</p>' : '<div class="note">No polarizer yet, so control reflections by moving instead: crouch lower, step sideways until you and the clutter leave the doors, and wear dark clothes.</div>';
+  html += `<div class="note">${COLOUR[col].note}</div>`;
+  return html;
+}
+
+/* ========= Views ========= */
+function renderPick(){
+  const c = state.ctx;
+  const chip = (k, v, label) => `<button class="chip" data-act="set" data-k="${k}" data-v="${v}" aria-pressed="${String(c[k] === v)}">${label}</button>`;
+  const doneCount = SHOTS.filter(s => (state.progress[s.id] || {}).done).length;
+  const groups = [['ess', 'The essential five'], ['det', 'Details'], ['env', 'One for the scene'], ['adv', 'Advanced']];
+  const row = s => { const p = state.progress[s.id] || {}; const right = p.best ? `<span class="score ${p.done ? 'done' : ''}">${p.best}</span>` : (p.done ? '<span class="score done">\u2713</span>' : '<span class="chev">\u203A</span>'); return `<button class="row ${p.done ? 'done' : ''}" data-act="open" data-id="${s.id}"><span class="num">${s.n}</span><span><span class="name">${s.name}</span><span class="tag">${s.tag}</span></span>${right}</button>`; };
+  const keyLine = state.apiKey ? '<p class="muted small">Key set for this session. It is never saved.</p>' : '<p class="muted small">Inside Claude no key is needed. On a hosted page, paste an Anthropic API key (kept in memory for this tab only). Without the coach, the arrows still work: detector plus sensors only.</p>';
+  return `
+    ${state.firstRun ? '<p class="lede">Pick a shot and point the phone at the car. The phone itself finds the car, tracks it, reads its own sensors, and draws arrows at frame rate: walk around, get lower, closer, level. Every few seconds the coach adds what only eyes can judge: wheels, reflections, clutter, light. Green means shoot.</p>' : ''}
+    <details class="setup" ${ctxComplete() ? '' : 'open'}>
+      <summary>Setup${ctxComplete() ? ': done' : ''}</summary>
+      <h3>Your car\u2019s colour</h3><div class="choices">${chip('colour','dark','Dark')}${chip('colour','light','Light')}${chip('colour','colour','Colourful')}</div>
+      <h3>Polarizer?</h3><div class="choices">${chip('polarizer',true,'Yes, a clip-on')}${chip('polarizer',false,'Not yet')}</div>
+      <h3>Samsung Pro mode?</h3><div class="choices">${chip('pro',true,'Yes')}${chip('pro',false,'No, or not sure')}</div>
+      <h3>The light right now</h3><div class="choices">${chip('light','golden','Golden hour')}${chip('light','overcast','Overcast')}${chip('light','harsh','Harsh sun')}${chip('light','blue','Blue hour')}${chip('light','garage','Indoors')}</div>
+      ${c.light ? `<div class="note">${LIGHT[c.light].verdict}</div>` : ''}
+      <h3>Connection</h3>
+      <div class="field"><input type="password" id="keyIn" placeholder="sk-ant-\u2026" autocomplete="off"><button data-act="setKey">Use key</button></div>
+      ${keyLine}
+      <p class="muted small" id="visionLine">${esc(rt.detStatus)}</p>
+      <p style="margin-top:8px"><button class="link" data-act="reset">${state.resetArmed ? 'Tap again to clear setup and progress' : 'Start over (clear setup and progress)'}</button></p>
+    </details>
+    <h1 style="margin-top:22px">Shot list</h1><p class="muted">${doneCount} of ${SHOTS.length} done. Tap a shot to open the live viewfinder.</p>
+    ${groups.map(([g, t]) => `<section class="group"><h2>${t}</h2>${SHOTS.filter(s => s.group === g).map(row).join('')}</section>`).join('')}
+    <p class="muted small" style="margin-top:18px">Camera blocked where you are? <button class="link" data-act="pickPhoto">Grade a photo from the gallery instead</button></p>`;
+}
+function renderReview(){
+  const r = state.review, shot = shotById(state.shot);
+  const img = r.url ? `<img class="preview" src="${r.url}" alt="Your photo">` : '';
+  const head = `<p><button class="link" data-act="tab" data-v="pick">\u2039 All shots</button></p><h1>${shot.name}</h1>`;
+  const saveBtn = r.url ? `<a class="btn ghost" download="shotlist-${shot.id}.jpg" href="${r.url}">Save photo</a>` : '';
+  if(r.status === 'loading') return `${head}${img}<p class="lede"><span class="spin"></span>Grading angle, wheels, light, reflections, framing\u2026</p>`;
+  if(r.status === 'error') return `${head}${img}<div class="note"><b>Grading did not work.</b> ${esc(r.message)}</div><p>Grade it yourself against the checklist:</p><ul class="checks">${shot.check.map((c, k) => `<li><input type="checkbox" id="e${k}"><label for="e${k}">${c}</label></li>`).join('')}</ul><div class="actions">${saveBtn}<button class="btn ghost" data-act="retake">Retake</button><button class="btn" data-act="done">Mark as done</button></div>`;
+  const g = r.result || {}, score = clamp(parseInt(g.score, 10) || 0, 0, 100);
+  const word = score >= 85 ? 'Magazine-ready' : score >= 75 ? 'Nearly there' : score >= 55 ? 'Getting there' : 'Worth a retake';
+  const keep = Array.isArray(g.keep) ? g.keep : [], fix = Array.isArray(g.fix) ? g.fix : [], edit = Array.isArray(g.edit) ? g.edit : [];
+  return `${head}${img}
+    <div class="verdict"><div class="big"><span>${score}</span><small>/100</small></div><div><div class="word">${word}</div><p style="margin:2px 0 0">${esc(g.headline)}</p></div></div>
+    ${keep.length ? `<h3>Keep doing this</h3>${keep.map(k => `<div class="keep">${esc(k)}</div>`).join('')}` : ''}
+    ${fix.length ? `<h3>Fix next time</h3>${fix.map(f => `<div class="fix"><b>${esc(f.issue)}</b><div class="why">${esc(f.why)}</div><div>${esc(f.do)}</div></div>`).join('')}` : ''}
+    ${edit.length ? `<h3>Edit it like this</h3><ol>${edit.map(e => `<li>${esc(e)}</li>`).join('')}</ol>` : ''}
+    <div class="actions">${saveBtn}<button class="btn ghost" data-act="retake">${g.retake ? 'Retake it' : 'Retake'}</button><button class="btn" data-act="done">Mark as done</button></div>`;
+}
+function renderLearn(){ return `<h1>Learn</h1><p class="muted">The why behind every arrow, in ten short lessons.</p>${LESSONS.map(l => `<details class="lesson"><summary>${l.t}</summary>${(l.p || []).map(p => `<p>${p}</p>`).join('')}${l.list ? `<ol>${l.list.map(x => `<li>${x}</li>`).join('')}</ol>` : ''}</details>`).join('')}`; }
+function render(){
+  const tab = state.view === 'review' ? 'pick' : state.view;
+  document.querySelectorAll('.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.v === tab)));
+  app.innerHTML = state.view === 'learn' ? renderLearn() : state.view === 'review' ? renderReview() : renderPick();
+}
+function setVision(msg){ rt.detStatus = msg; const el = document.getElementById('visionLine'); if(el) el.textContent = msg; }
+
+/* ========= On-device vision: MediaPipe object detector ========= */
+async function loadDetector(){
+  const urls = [`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}/vision_bundle.mjs`, 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.mjs'];
+  let mod = null, ver = MP_VERSION;
+  for(const u of urls){ try{ mod = await import(u); ver = u.includes('@latest') ? 'latest' : MP_VERSION; break; }catch(e){} }
+  if(!mod){ setVision('Vision model could not load (no internet or blocked). Arrows use the coach and sensors only.'); return; }
+  try{
+    const lib = mod.ObjectDetector ? mod : (mod.default || {});
+    const vision = await lib.FilesetResolver.forVisionTasks(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${ver}/wasm`);
+    const make = delegate => lib.ObjectDetector.createFromOptions(vision, {baseOptions:{modelAssetPath: MP_MODEL, delegate}, scoreThreshold: 0.3, maxResults: 6, runningMode: 'VIDEO'});
+    try{ rt.det = await make('GPU'); rt.delegate = 'GPU'; }catch(e){ rt.det = await make('CPU'); rt.delegate = 'CPU'; }
+    rt.detReady = true; setVision('Vision: ready on this phone (' + rt.delegate + ')');
+  }catch(e){ setVision('Vision model failed: ' + (e.message || e) + '. Arrows use the coach and sensors only.'); }
+}
+function iou(a, b){
+  const x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y), x2 = Math.min(a.x + a.w, b.x + b.w), y2 = Math.min(a.y + a.h, b.y + b.h);
+  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  return inter / (a.w * a.h + b.w * b.h - inter + 1e-6);
+}
+function runDetect(now){
+  if(!rt.detReady || rt.detBusy || !video.videoWidth || now - rt.lastDet < (rt.detInterval || DET_INTERVAL)) return;
+  rt.detBusy = true; rt.lastDet = now;
+  try{
+    const t0 = performance.now();
+    const res = rt.det.detectForVideo(video, now);
+    rt.detInterval = clamp((performance.now() - t0) * 2.5, DET_INTERVAL, 1500);   // slow phone: detect less often, keep the arrows smooth
+    const vw = video.videoWidth, vh = video.videoHeight;
+    let best = null, bestScore = -1;
+    for(const d of (res.detections || [])){
+      const c = d.categories && d.categories[0];
+      if(!c || !VEHICLE.has(c.categoryName) || c.score < 0.3) continue;
+      const bb = d.boundingBox, nb = {x: bb.originX / vw, y: bb.originY / vh, w: bb.width / vw, h: bb.height / vh};
+      let s = nb.w * nb.h * c.score; if(rt.box) s *= 1 + 3 * iou(nb, rt.box);
+      if(s > bestScore){ bestScore = s; best = nb; }
+    }
+    if(best){ rt.boxTs = now; rt.box = rt.box ? {x: rt.box.x + (best.x - rt.box.x) * 0.45, y: rt.box.y + (best.y - rt.box.y) * 0.45, w: rt.box.w + (best.w - rt.box.w) * 0.45, h: rt.box.h + (best.h - rt.box.h) * 0.45} : best; }
+    else if(now - rt.boxTs > 1200) rt.box = null;
+    rt.fpsN++; if(now - rt.fpsT > 1000){ rt.fps = rt.fpsN; rt.fpsN = 0; rt.fpsT = now; }
+  }catch(e){ rt.detStatus = 'Vision error: ' + (e.message || e); }
+  finally{ rt.detBusy = false; }
+}
+
+/* ========= Sensors: roll and pitch from the accelerometer, heading from the gyro/compass fusion ========= */
+function startSensors(){
+  if(rt.sensors) return; rt.sensors = true;
+  const go = () => { window.addEventListener('devicemotion', onMotion); window.addEventListener('deviceorientation', onOrient); };
+  if(typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function'){
+    DeviceMotionEvent.requestPermission().then(r => { if(r === 'granted') go(); }).catch(() => {});
+  } else go();
+}
+function onMotion(e){
+  const g = e.accelerationIncludingGravity; if(!g || g.x == null) return;
+  const a = (screen.orientation && typeof screen.orientation.angle === 'number') ? screen.orientation.angle : (window.orientation || 0);
+  rt.roll = wrap(-Math.atan2(g.x, g.y) * 180 / Math.PI + a);          // 0 = level, positive = rotated clockwise
+  rt.pitch = Math.atan2(g.z, Math.hypot(g.x, g.y)) * 180 / Math.PI;    // positive = camera pointing down
+  rt.motionTs = performance.now();
+}
+function onOrient(e){
+  if(e.alpha == null || e.beta == null || e.gamma == null) return;
+  const r = Math.PI / 180, cA = Math.cos(e.alpha * r), sA = Math.sin(e.alpha * r), cB = Math.cos(e.beta * r), sB = Math.sin(e.beta * r), cG = Math.cos(e.gamma * r), sG = Math.sin(e.gamma * r);
+  const rA = -cA * sG - sA * sB * cG, rB = -sA * sG + cA * sB * cG;   // Earth-frame east and north components of the camera axis
+  rt.heading = (Math.atan2(rA, rB) * 180 / Math.PI + 360) % 360;
+}
+/* current viewing angle: the coach's last estimate, carried forward by how far the camera has turned since */
+function thetaNow(){
+  if(rt.theta == null) return null;
+  if(rt.heading == null || rt.thetaHeading == null) return rt.theta;
+  return wrap(rt.theta + wrap(rt.heading - rt.thetaHeading));
+}
+
+/* ========= Guidance: turn detector, sensors and coach into arrows ========= */
+function targetsFor(cfg){
+  const portrait = video.videoWidth && video.videoWidth < video.videoHeight;
+  const fill = portrait ? Math.min(0.92, cfg.fill * 1.2) : cfg.fill;
+  let cx = cfg.cx;
+  if(cfg.lead && rt.nose === 'left') cx += 0.05;      // more room in front of the nose
+  else if(cfg.lead && rt.nose === 'right') cx -= 0.05;
+  return {fill, cx, cy: cfg.cy};
+}
+function computeGuidance(){
+  const shot = shotById(state.shot), cfg = shot.cfg || {}, pen = [], arrows = {};
+  const stale = rt.ai.ts && performance.now() - rt.ai.ts > 12000;
+  if(!cfg.noLevel && rt.motionTs){
+    if(Math.abs(rt.roll) > LEVEL_TOL){ pen.push({k:'level', p: Math.min(20, Math.abs(rt.roll) * 4), t: `Level: tilt ${rt.roll > 0 ? 'left' : 'right'} ${Math.abs(rt.roll).toFixed(0)}\u00B0`}); arrows.roll = rt.roll; }
+    if(cfg.low && rt.pitch > PITCH_TOL){ pen.push({k:'pitch', p: Math.min(25, rt.pitch * 1.5), t: `Get lower: the phone points down ${rt.pitch.toFixed(0)}\u00B0`}); arrows.down = true; }
+  }
+  if(!cfg.noTrack && rt.detReady){
+    if(!rt.box) return {headline:'Point the phone at the car', chips:[], arrows, score:0, shoot:false, noCar:true};
+    const t = targetsFor(cfg), b = rt.box, bcx = b.x + b.w / 2, bcy = b.y + b.h / 2, th = thetaNow();
+    if(cfg.theta){
+      if(th != null){
+        const tgt = cfg.theta.reduce((best, v) => Math.abs(wrap(v - th)) < Math.abs(wrap(best - th)) ? v : best, cfg.theta[0]);
+        const err = wrap(tgt - th), tol = cfg.tolAngle || 8;
+        if(Math.abs(err) > tol){ pen.push({k:'angle', p: Math.min(40, Math.abs(err) * 0.6), t: `Walk ${err > 0 ? 'left' : 'right'} around the car, ${Math.abs(err).toFixed(0)}\u00B0 to go`}); arrows.orbit = err; }
+      } else {
+        const aspect = (b.w * video.videoWidth) / (b.h * video.videoHeight), want = Math.abs(cfg.theta[0]) % 180;
+        if(want === 90 && aspect < 2.6) pen.push({k:'angle', p: 20, t: 'Walk around until you see the full side'});
+        else if(want === 0 && aspect > 1.8) pen.push({k:'angle', p: 20, t: 'Walk around to face the car straight on'});
+        else if(want === 45 && (aspect < 1.7 || aspect > 3.0)) pen.push({k:'angle', p: 20, t: 'Walk around to a three-quarter view'});
+        else if(!rt.ai.off) arrows.checking = true;
+      }
+    }
+    const sErr = (b.w - t.fill) / t.fill;
+    if(sErr < -SIZE_TOL){ pen.push({k:'size', p: Math.min(25, -sErr * 60), t: 'Closer, or zoom in'}); arrows.size = 1; }
+    else if(sErr > SIZE_TOL){ pen.push({k:'size', p: Math.min(25, sErr * 60), t: 'Back up, or zoom out'}); arrows.size = -1; }
+    const dx = t.cx - bcx, dy = t.cy - bcy;
+    if(Math.abs(dx) > POS_TOL){ pen.push({k:'pan', p: Math.min(20, Math.abs(dx) * 100), t: `Turn ${dx > 0 ? 'left' : 'right'} a little`}); arrows.panX = dx > 0 ? -1 : 1; }
+    if(Math.abs(dy) > POS_TOL + 0.01){ pen.push({k:'tilt', p: Math.min(15, Math.abs(dy) * 80), t: `Tilt ${dy > 0 ? 'up' : 'down'} a little`}); arrows.panY = dy > 0 ? -1 : 1; }
+    arrows.target = t;
+  }
+  if(rt.ai.ts && !stale){
+    if(rt.ai.wheels === false) pen.push({k:'wheels', p: 15, t: 'Turn the wheels: rim, not tread', ai: true});
+    if(cfg.low && rt.ai.height === 'high' && !(cfg.noTrack === undefined && rt.pitch > PITCH_TOL)) pen.push({k:'height', p: 15, t: 'Lower: get to headlight height', ai: true});
+    rt.ai.issues.forEach(t => pen.push({k:'ai', p: 8, t, ai: true}));
+  }
+  const order = ['angle', 'height', 'pitch', 'size', 'pan', 'tilt', 'level', 'wheels', 'ai'];
+  pen.sort((a, b) => order.indexOf(a.k) - order.indexOf(b.k));
+  const score = clamp(Math.round(100 - pen.reduce((s, x) => s + x.p, 0)), 0, 100);
+  let headline = pen.length ? pen[0].t : ((cfg.noTrack || !rt.detReady) && rt.ai.say ? rt.ai.say : 'Hold it there. Shoot.');
+  if((cfg.noTrack || !rt.detReady) && !pen.length && !rt.ai.ts) headline = rt.ai.off ? 'Frame it, keep it level, shoot' : 'Frame it. Coach is looking\u2026';
+  const chips = pen.slice(1, 4).map(x => ({t: x.t, ai: !!x.ai}));
+  if(rt.ai.say && rt.ai.ts && !stale && pen.length && !pen.some(x => x.t === rt.ai.say) && chips.length < 4) chips.push({t: 'Coach: ' + rt.ai.say, ai: true});
+  return {headline, chips, arrows, score, shoot: score >= 85 && pen.every(x => x.p < 10)};
+}
+
+/* ========= Overlay drawing ========= */
+function fitRect(){
+  const W = innerWidth, H = innerHeight, vw = video.videoWidth || 16, vh = video.videoHeight || 9, s = Math.min(W / vw, H / vh), w = vw * s, h = vh * s;
+  return {x: (W - w) / 2, y: (H - h) / 2, w, h};
+}
+function corners(ctx, x, y, w, h, color, lw){
+  const L = Math.max(10, Math.min(28, w / 4, h / 4));
+  ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.beginPath();
+  ctx.moveTo(x, y + L); ctx.lineTo(x, y); ctx.lineTo(x + L, y);
+  ctx.moveTo(x + w - L, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + L);
+  ctx.moveTo(x + w, y + h - L); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w - L, y + h);
+  ctx.moveTo(x + L, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + h - L);
+  ctx.stroke();
+}
+function tri(ctx, cx, cy, dir, s, color){
+  ctx.fillStyle = color; ctx.beginPath();
+  if(dir === 'l'){ ctx.moveTo(cx - s, cy); ctx.lineTo(cx + s, cy - s * 0.85); ctx.lineTo(cx + s, cy + s * 0.85); }
+  if(dir === 'r'){ ctx.moveTo(cx + s, cy); ctx.lineTo(cx - s, cy - s * 0.85); ctx.lineTo(cx - s, cy + s * 0.85); }
+  if(dir === 'u'){ ctx.moveTo(cx, cy - s); ctx.lineTo(cx - s * 0.85, cy + s); ctx.lineTo(cx + s * 0.85, cy + s); }
+  if(dir === 'd'){ ctx.moveTo(cx, cy + s); ctx.lineTo(cx - s * 0.85, cy - s); ctx.lineTo(cx + s * 0.85, cy - s); }
+  ctx.closePath(); ctx.fill();
+}
+function orbitArrow(ctx, cx, cy, r, left, color, label){
+  const a0 = Math.PI * 1.18, a1 = Math.PI * 1.82;
+  ctx.strokeStyle = color; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.beginPath();
+  if(left) ctx.arc(cx, cy, r, a1, a0, true); else ctx.arc(cx, cy, r, a0, a1, false);
+  ctx.stroke();
+  const ae = left ? a0 : a1, ex = cx + r * Math.cos(ae), ey = cy + r * Math.sin(ae);
+  const t = left ? [Math.sin(ae), -Math.cos(ae)] : [-Math.sin(ae), Math.cos(ae)], n = [-t[1], t[0]];
+  ctx.fillStyle = color; ctx.beginPath();
+  ctx.moveTo(ex + t[0] * 18, ey + t[1] * 18); ctx.lineTo(ex + n[0] * 11, ey + n[1] * 11); ctx.lineTo(ex - n[0] * 11, ey - n[1] * 11); ctx.closePath(); ctx.fill();
+  ctx.font = '600 15px Barlow, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(0,0,0,.8)'; ctx.shadowBlur = 4;
+  ctx.fillText(label, cx, cy - r + 26); ctx.shadowBlur = 0;
+}
+function drawOverlay(){
+  const dpr = Math.min(2, devicePixelRatio || 1), W = innerWidth, H = innerHeight;
+  if(ov.width !== Math.round(W * dpr) || ov.height !== Math.round(H * dpr)){ ov.width = Math.round(W * dpr); ov.height = Math.round(H * dpr); }
+  const ctx = ov.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+  const g = rt.guide, a = g.arrows || {}, fr = fitRect(), shot = shotById(state.shot), cfg = shot.cfg || {};
+  const amber = '#E9A400', go = '#4CD47A', white = 'rgba(255,255,255,.85)';
+  const topSafe = 110, panel = document.querySelector('.coach').getBoundingClientRect(), botSafe = Math.max(120, H - panel.top + 6);
+  if(!cfg.noTrack && rt.detReady){
+    const b = rt.box;
+    if(b) corners(ctx, fr.x + b.x * fr.w, fr.y + b.y * fr.h, b.w * fr.w, b.h * fr.h, g.shoot ? go : white, 3);
+    if(a.target && b){
+      const tw = a.target.fill * fr.w, th = b.h * fr.h, tx = fr.x + a.target.cx * fr.w - tw / 2, ty = fr.y + a.target.cy * fr.h - th / 2;
+      ctx.setLineDash([10, 8]); corners(ctx, tx, ty, tw, th, amber, 4); ctx.setLineDash([]);
+    }
+    if(a.panX) tri(ctx, a.panX < 0 ? fr.x + 26 : fr.x + fr.w - 26, H / 2, a.panX < 0 ? 'l' : 'r', 22, amber);
+    if(a.panY) tri(ctx, W / 2, a.panY < 0 ? Math.max(fr.y + 26, topSafe) : Math.min(fr.y + fr.h - 26, H - botSafe), a.panY < 0 ? 'u' : 'd', 22, amber);
+    if(a.size && b){
+      const bx = fr.x + b.x * fr.w, by = fr.y + b.y * fr.h, bw = b.w * fr.w, bh = b.h * fr.h, m = 26, out = a.size > 0;
+      tri(ctx, bx - m, by + bh / 2, out ? 'l' : 'r', 12, amber); tri(ctx, bx + bw + m, by + bh / 2, out ? 'r' : 'l', 12, amber);
+    }
+    if(a.orbit != null) orbitArrow(ctx, W / 2, H - botSafe - 8, 44, a.orbit > 0, amber, `walk ${a.orbit > 0 ? 'left' : 'right'} ${Math.abs(a.orbit).toFixed(0)}\u00B0`);
+    if(a.checking){ ctx.font = '600 14px Barlow, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = white; ctx.fillText('reading the angle\u2026', W / 2, H - botSafe - 12); }
+  }
+  if(a.down) tri(ctx, fr.x + fr.w - 40, H / 2 + 60, 'd', 18, amber);
+  if(rt.motionTs && !cfg.noLevel){
+    const len = Math.min(180, W * 0.42), lvl = Math.abs(rt.roll) <= LEVEL_TOL;
+    ctx.save(); ctx.translate(W / 2, H / 2); ctx.rotate(-rt.roll * Math.PI / 180);
+    ctx.strokeStyle = lvl ? go : amber; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.shadowColor = 'rgba(0,0,0,.7)'; ctx.shadowBlur = 4;
+    ctx.beginPath(); ctx.moveTo(-len / 2, 0); ctx.lineTo(-22, 0); ctx.moveTo(22, 0); ctx.lineTo(len / 2, 0); ctx.stroke(); ctx.restore();
+    ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(W / 2 - 22, H / 2); ctx.lineTo(W / 2 + 22, H / 2); ctx.stroke();
+  }
+  const sh = $('#shutter').getBoundingClientRect();
+  if(sh.width){
+    const cx = sh.left + sh.width / 2, cy = sh.top + sh.height / 2, r = sh.width / 2 + 8;
+    ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = g.shoot ? go : amber; ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (g.score / 100)); ctx.stroke();
+  }
+}
+function frame(now){
+  if(!state.liveOn) return;
+  runDetect(now);
+  rt.guide = computeGuidance();
+  drawOverlay();
+  if(now - rt.lastDom > 120){
+    rt.lastDom = now;
+    const g = rt.guide;
+    const sayEl = $('#say'); sayEl.textContent = g.headline; sayEl.classList.toggle('go', g.shoot); $('#shutter').classList.toggle('go', g.shoot);
+    $('#moves').innerHTML = g.chips.map(c => `<span class="${c.ai ? 'ai' : ''}">${esc(c.t)}</span>`).join('');
+    if(g.shoot && !rt.wasShoot && navigator.vibrate) navigator.vibrate([40, 60, 40]);
+    rt.wasShoot = g.shoot;
+    const th = thetaNow(), parts = [];
+    parts.push(rt.detReady ? `Vision ${rt.fps} fps ${rt.delegate || ''}` : rt.detStatus.replace(/^Vision: /, 'Vision '));
+    if(th != null) parts.push(`angle ${th.toFixed(0)}\u00B0`);
+    if(rt.motionTs) parts.push(`roll ${rt.roll.toFixed(1)}\u00B0`);
+    parts.push(rt.ai.off ? 'coach off' : rt.ai.busy ? 'coach looking' : rt.ai.ts ? `coach ${Math.round((now - rt.ai.ts) / 1000)} s ago` : (state.coachOn ? 'coach starting' : 'coach paused'));
+    if(rt.ai.msg) parts.push(rt.ai.msg);
+    $('#status').textContent = parts.join('  |  ');
+  }
+  rt.raf = requestAnimationFrame(frame);
+}
+
+/* ========= Coach loop (the slow brain) ========= */
+function grabFrame(max, q){
+  const s = Math.min(1, max / Math.max(video.videoWidth, video.videoHeight));
+  const c = document.createElement('canvas'); c.width = Math.round(video.videoWidth * s); c.height = Math.round(video.videoHeight * s);
+  c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', q).split(',')[1];
+}
+function scheduleAI(ms){ clearTimeout(rt.ai.timer); rt.ai.timer = setTimeout(aiTick, ms); }
+async function aiTick(){
+  if(!state.liveOn || !stream || rt.ai.off) return;
+  const cfg = (shotById(state.shot) || {}).cfg || {};
+  if(rt.ai.busy || $('#sheet').classList.contains('on') || document.hidden || !video.videoWidth || (!cfg.noTrack && rt.detReady && !rt.box)){ if(state.coachOn) scheduleAI(1000); return; }
+  rt.ai.busy = true;
+  const headingAtGrab = rt.heading, ts = performance.now();
+  try{
+    const b64 = grabFrame(512, 0.6);
+    const r = parseJSON(await claude([imageBlock(b64), {type:'text', text: livePrompt(shotById(state.shot))}]));
+    if(!state.liveOn) return;
+    if(r.car_visible === false){ rt.ai.msg = 'coach sees no car'; }
+    else{
+      rt.ai.msg = '';
+      if(typeof r.angle === 'number' && isFinite(r.angle)){ rt.theta = wrap(r.angle); rt.thetaHeading = headingAtGrab; rt.thetaTs = ts; }
+      if(r.nose) rt.nose = String(r.nose);
+    }
+    rt.ai.ts = performance.now(); rt.ai.issues = (Array.isArray(r.issues) ? r.issues : []).slice(0, 3).map(String); rt.ai.wheels = typeof r.wheels_ok === 'boolean' ? r.wheels_ok : null; rt.ai.height = r.height || null; rt.ai.say = String(r.say || ''); rt.ai.ready = parseInt(r.ready, 10) || 0;
+    if(state.coachOn) scheduleAI(AI_INTERVAL);
+  }catch(e){
+    if(isKeyProblem(e)){ rt.ai.off = true; rt.ai.msg = e.message.replace(/^KEY:/, ''); }
+    else { rt.ai.msg = 'coach hiccup, retrying'; if(state.coachOn) scheduleAI(AI_INTERVAL); }
+  }finally{ rt.ai.busy = false; }
+}
+
+/* ========= Camera ========= */
+async function openLive(id){
+  state.shot = id; state.liveOn = true;
+  rt.box = null; rt.theta = null; rt.thetaHeading = null; rt.nose = 'unknown'; rt.wasShoot = false;
+  rt.ai = Object.assign(rt.ai, {ts:0, issues:[], wheels:null, height:null, say:'', ready:0, busy:false, msg:''});
+  const shot = shotById(id);
+  $('#liveTitle').textContent = shot.n + '. ' + shot.name;
+  $('#say').textContent = 'Starting the camera'; $('#moves').innerHTML = ''; $('#status').textContent = '';
+  $('#camErr').classList.remove('on'); $('#sheet').classList.remove('on');
+  live.classList.add('on');
+  await startCamera();
+}
+function closeLive(){
+  state.liveOn = false; clearTimeout(rt.ai.timer); cancelAnimationFrame(rt.raf); stopCamera();
+  live.classList.remove('on');
+}
+async function startCamera(deviceId){
+  stopCamera();
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return camError('This browser cannot open the camera.');
+  try{
+    const v = deviceId ? {deviceId:{exact: deviceId}} : {facingMode:{ideal:'environment'}};
+    stream = await navigator.mediaDevices.getUserMedia({audio:false, video: Object.assign(v, {width:{ideal:1920}, height:{ideal:1080}})});
+  }catch(e){
+    const name = e && e.name || '';
+    return camError(name === 'NotAllowedError' ? 'Camera permission was refused, or this page is not allowed to use the camera.' : name === 'NotFoundError' ? 'No camera was found.' : (e.message || String(e)));
+  }
+  video.srcObject = stream; try{ await video.play(); }catch(e){}
+  track = stream.getVideoTracks()[0]; zoomCaps = null;
+  try{ const caps = track.getCapabilities ? track.getCapabilities() : {}; if(caps.zoom && caps.zoom.max > caps.zoom.min) zoomCaps = caps.zoom; }catch(e){}
+  try{ const devs = await navigator.mediaDevices.enumerateDevices(); backCams = devs.filter(d => d.kind === 'videoinput' && !/front|user|face/i.test(d.label || '')); if(deviceId) camIndex = Math.max(0, backCams.findIndex(d => d.deviceId === deviceId)); }catch(e){}
+  renderLensCtl();
+  try{ if(navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen'); }catch(e){}
+  startSensors();
+  cancelAnimationFrame(rt.raf); rt.raf = requestAnimationFrame(frame);
+  if(state.coachOn) scheduleAI(900);
+}
+function stopCamera(){
+  if(stream){ stream.getTracks().forEach(t => t.stop()); stream = null; track = null; }
+  video.srcObject = null;
+  try{ if(wakeLock){ wakeLock.release(); wakeLock = null; } }catch(e){}
+}
+function camError(msg){
+  $('#camErrBody').innerHTML = `<h2 style="margin-top:0">Camera unavailable</h2><p>${esc(msg)}</p><p style="color:#bbb">Inside the Claude preview the camera is blocked. Host this file on a secure (https) address, open the link in Chrome on your phone, and the live viewfinder works. You can still grade a photo from your gallery here.</p><button class="btn amber" data-act="pickPhoto">Choose a photo to grade</button><button class="btn ghost" style="color:#fff;border-color:#fff" data-act="closeLive">Back to the shots</button>`;
+  $('#camErr').classList.add('on');
+}
+function renderLensCtl(){
+  let html = '';
+  if(backCams.length > 1) html += `<button class="pill" data-act="lens">Lens ${camIndex + 1}/${backCams.length}</button>`;
+  if(zoomCaps && track){ let cur = zoomCaps.min; try{ cur = track.getSettings().zoom || cur; }catch(e){} [1, 2, 3].filter(z => z <= zoomCaps.max).forEach(z => { html += `<button class="pill ${Math.abs(cur - z) < 0.2 ? 'on' : ''}" data-act="zoom" data-z="${z}">${z}x</button>`; }); }
+  $('#lensCtl').innerHTML = html;
+}
+async function setZoom(z){ try{ await track.applyConstraints({advanced:[{zoom: z}]}); renderLensCtl(); }catch(e){ toast('Zoom not available on this lens'); } }
+async function nextLens(){ if(backCams.length < 2) return; camIndex = (camIndex + 1) % backCams.length; await startCamera(backCams[camIndex].deviceId); }
+function openBrief(){
+  const shot = shotById(state.shot), ctx = state.ctx;
+  $('#sheet').innerHTML = `<p><button class="link" data-act="closeBrief">\u2039 Back to the camera</button></p><h1>${shot.name}</h1><p class="lede">${shot.why}</p>
+    ${shot.cam === null ? '' : `<div class="diagram">${diagramSVG(shot, ctx)}<div class="caption">${ctx.light ? LIGHT[ctx.light].cap : 'Set the light in Setup to see where the sun should be.'}</div></div>`}
+    <h2>Park the car</h2><p>${shot.park}</p>
+    <h2>Stand here</h2><div class="kv"><b>Distance</b><span>${shot.dist}</span><b>Height</b><span>${shot.height}</span><b>Lens</b><span>${shot.lens}</span></div><p>${shot.stand}</p>
+    <h2>Phone settings</h2>${settingsHTML(shot, ctx)}
+    <h2>Before you press the shutter</h2><ul class="checks">${shot.check.map((c, k) => `<li><input type="checkbox" id="b${k}"><label for="b${k}">${c}</label></li>`).join('')}</ul>
+    <div class="actions"><button class="btn" data-act="closeBrief">Back to the camera</button></div>`;
+  $('#sheet').classList.add('on'); $('#sheet').scrollTop = 0;
+}
+
+/* ========= Capture and grade ========= */
+async function takePhoto(){
+  if(!stream) return;
+  if(navigator.vibrate) navigator.vibrate(30);
+  let blob = null;
+  try{ if(window.ImageCapture && track) blob = await Promise.race([new ImageCapture(track).takePhoto(), new Promise((_, rej) => setTimeout(() => rej(new Error('slow')), 2500))]); }catch(e){ blob = null; }
+  if(!blob){ const c = document.createElement('canvas'); c.width = video.videoWidth; c.height = video.videoHeight; c.getContext('2d').drawImage(video, 0, 0); blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.92)); }
+  closeLive(); startReview(blob);
+}
+async function downscale(blob){
+  const MAX = 1400; let bmp;
+  try{ bmp = await createImageBitmap(blob, {imageOrientation: 'from-image'}); }
+  catch(e){ bmp = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('This image format cannot be read. Turn off High efficiency pictures (HEIF) in the camera settings, or choose a JPEG.')); im.src = URL.createObjectURL(blob); }); }
+  const w = bmp.width, h = bmp.height, s = Math.min(1, MAX / Math.max(w, h));
+  const c = document.createElement('canvas'); c.width = Math.round(w * s); c.height = Math.round(h * s);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', 0.85).split(',')[1];
+}
+async function startReview(blob){
+  if(state.review && state.review.url) URL.revokeObjectURL(state.review.url);
+  state.review = {status:'loading', url: URL.createObjectURL(blob)}; state.view = 'review'; render(); window.scrollTo(0, 0);
+  try{
+    const b64 = await downscale(blob);
+    state.review.result = parseJSON(await claude([imageBlock(b64), {type:'text', text: gradePrompt(shotById(state.shot))}]));
+    state.review.status = 'done'; render();
+  }catch(e){ state.review.status = 'error'; state.review.message = (e.message || String(e)).replace(/^KEY:/, ''); render(); }
+}
+function markDone(){
+  const id = state.shot, prev = state.progress[id] || {};
+  const score = state.review && state.review.result ? parseInt(state.review.result.score, 10) || 0 : 0;
+  state.progress[id] = {done: true, best: Math.max(prev.best || 0, score) || undefined};
+  save(); state.view = 'pick'; render(); window.scrollTo(0, 0); toast('Marked as done');
+}
+function toast(msg){ const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 1800); }
+const parseVal = v => v === 'true' ? true : v === 'false' ? false : v;
+
+/* ========= Events ========= */
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]'); if(!el) return;
+  switch(el.dataset.act){
+    case 'tab': state.view = el.dataset.v; state.resetArmed = false; render(); window.scrollTo(0, 0); break;
+    case 'set': state.ctx[el.dataset.k] = parseVal(el.dataset.v); save(); render(); break;
+    case 'setKey': { const v = ($('#keyIn').value || '').trim(); state.apiKey = v || API_KEY; rt.ai.off = false; rt.ai.msg = ''; toast(v ? 'Key set for this session' : 'Key cleared'); render(); break; }
+    case 'open': if(state.shot !== el.dataset.id) state.review = null; openLive(el.dataset.id); break;
+    case 'closeLive': closeLive(); state.view = 'pick'; render(); break;
+    case 'brief': openBrief(); break;
+    case 'closeBrief': $('#sheet').classList.remove('on'); if(state.coachOn) scheduleAI(600); break;
+    case 'auto': state.coachOn = !state.coachOn; $('#autoBtn').textContent = 'Coach: ' + (state.coachOn ? 'on' : 'off'); if(state.coachOn){ rt.ai.off = false; scheduleAI(200); } else clearTimeout(rt.ai.timer); break;
+    case 'ask': clearTimeout(rt.ai.timer); rt.ai.off = false; aiTick(); break;
+    case 'zoom': setZoom(parseFloat(el.dataset.z)); break;
+    case 'lens': nextLens(); break;
+    case 'shoot': takePhoto(); break;
+    case 'pickPhoto': if(!state.shot) state.shot = 'front34'; $('#fileGal').click(); break;
+    case 'retake': openLive(state.shot); break;
+    case 'done': markDone(); break;
+    case 'reset':
+      if(!state.resetArmed){ state.resetArmed = true; render(); break; }
+      state.ctx = {colour:null, polarizer:null, pro:null, light:null}; state.progress = {}; state.resetArmed = false; save(); render(); toast('Cleared'); break;
+  }
+});
+$('#fileGal').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if(f){ closeLive(); startReview(f); } e.target.value = ''; });
+document.addEventListener('visibilitychange', () => { if(!document.hidden && state.liveOn && state.coachOn && !rt.ai.busy && !rt.ai.off) scheduleAI(500); });
+window.addEventListener('orientationchange', () => { if(state.liveOn) renderLensCtl(); });
+window.__app = {state, rt, computeGuidance, thetaNow};
+load();
+</script>
+</body>
+</html>

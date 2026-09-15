@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="roadframe_black">#07090B</color>
+    <color name="roadframe_lime">#C8FF36</color>
+    <color name="roadframe_amber">#FFB020</color>
+</resources>
