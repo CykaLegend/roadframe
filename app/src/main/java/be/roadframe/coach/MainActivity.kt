@@ -7,22 +7,37 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraMetadata
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.SystemClock
 import android.provider.MediaStore
+import android.text.TextUtils
+import android.view.Choreographer
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
+import android.view.Surface
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.OptIn
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SwitchCompat
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.AspectRatio
 import androidx.camera.core.Camera
+import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
@@ -38,38 +53,68 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlin.math.atan
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 
+/**
+ * Two clocks. The sensors (up to 200 Hz) and the display (every vsync) drive level, pitch,
+ * heading and the predicted car box; the detector (about 10 Hz) only re-anchors that box. The
+ * coach engine runs once per displayed frame on pure numbers and the overlay draws its answer.
+ */
 class MainActivity : AppCompatActivity() {
     private lateinit var root: FrameLayout
     private lateinit var previewView: PreviewView
     private lateinit var overlay: CoachOverlayView
+    private lateinit var shotChip: TextView
+    private lateinit var noseChip: TextView
     private lateinit var subjectChip: TextView
-    private lateinit var modeChip: TextView
     private lateinit var shutterButton: TextView
+    private lateinit var prefs: CoachPrefs
 
     private val cameraExecutor = Executors.newSingleThreadExecutor()
     private val coachEngine = CoachEngine()
-    private lateinit var levelSensor: LevelSensor
+    private val tracker = SubjectTracker()
+    private lateinit var poseSensor: PoseSensor
     private var vehicleAnalyzer: VehicleAnalyzer? = null
+    private var imageAnalysis: ImageAnalysis? = null
     private var camera: Camera? = null
     private var imageCapture: ImageCapture? = null
 
+    private var category = ShotCategory.FRONT_THREE_QUARTER
+    private var structure = CoachStructure.ROADFRAME
     private var subjectPreference = SubjectPreference.AUTO
-    private var shotMode = ShotMode.BALANCED
-    private var rollDegrees = 0f
-    private var lastStats = FrameStats()
-    private var lastInferenceMillis = 0L
-    private var detectedSubject: DetectedSubject? = null
-    private var manualSelection: NormalizedBox? = null
-    private var lastDetectionAt = 0L
+    private var showStats = true
 
-    private var stableAdvice: CoachAdvice? = null
-    private var candidateAction: AdviceAction? = null
-    private var candidateFrames = 0
-    private var wasReady = false
+    private var lastStats = FrameStats()
+    private var manualSelection: NormalizedBox? = null
+    /** Heading of the camera when the user tapped NOSE while facing the nose head-on. */
+    private var noseHeading: Float? = null
+    private var currentZoom = 1f
+    private var sensorLongFov = DEFAULT_LONG_FOV
+    private var sensorShortFov = DEFAULT_SHORT_FOV
+    private var realtimeFrameTimestamps = false
+    private var delegateName = "CPU"
+
+    private var wasShoot = false
+    private var lastPrimaryRule: Rule? = null
+    private val perf = PerfMeter()
+    private var running = false
+    private var lastTickNanos = 0L
 
     private val lensChips = linkedMapOf<Float, TextView>()
-    private var requestedZoom = 1f
+
+    private val frameCallback = object : Choreographer.FrameCallback {
+        override fun doFrame(frameTimeNanos: Long) {
+            if (!running) return
+            if (frameTimeNanos - lastTickNanos >= MIN_TICK_NANOS) {
+                lastTickNanos = frameTimeNanos
+                tick()
+            }
+            Choreographer.getInstance().postFrameCallback(this)
+        }
+    }
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -86,13 +131,15 @@ class MainActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
+        prefs = CoachPrefs(this)
+        category = prefs.category
+        structure = prefs.structure
+        subjectPreference = prefs.subject
+        showStats = prefs.showStats
+
         buildInterface()
-        levelSensor = LevelSensor(this) { roll ->
-            runOnUiThread {
-                rollDegrees = roll
-                refreshAdvice()
-            }
-        }
+        poseSensor = PoseSensor(this, ::displayRotationDegrees) { }
+        overlay.setDetailMode(!category.geometry.tracksVehicle)
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             previewView.post { startCamera() }
@@ -103,11 +150,15 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (::levelSensor.isInitialized) levelSensor.start()
+        poseSensor.start()
+        running = true
+        Choreographer.getInstance().postFrameCallback(frameCallback)
     }
 
     override fun onPause() {
-        if (::levelSensor.isInitialized) levelSensor.stop()
+        running = false
+        Choreographer.getInstance().removeFrameCallback(frameCallback)
+        poseSensor.stop()
         super.onPause()
     }
 
@@ -116,6 +167,15 @@ class MainActivity : AppCompatActivity() {
         cameraExecutor.shutdown()
         super.onDestroy()
     }
+
+    private fun displayRotationDegrees(): Int = when (previewView.display?.rotation ?: Surface.ROTATION_0) {
+        Surface.ROTATION_90 -> 90
+        Surface.ROTATION_180 -> 180
+        Surface.ROTATION_270 -> 270
+        else -> 0
+    }
+
+    // ---------------------------------------------------------------- interface
 
     private fun buildInterface() {
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -127,8 +187,7 @@ class MainActivity : AppCompatActivity() {
         overlay = CoachOverlayView(this).apply {
             onManualSelection = { box ->
                 manualSelection = box
-                resetAdviceStability()
-                refreshAdvice()
+                coachEngine.reset()
             }
             onFocusTap = { x, y -> focusAt(x, y) }
         }
@@ -159,69 +218,76 @@ class MainActivity : AppCompatActivity() {
             topMargin = dp(if (landscape) 18 else 34)
         })
 
-        val infoButton = makeChip("?", compact = true).apply {
-            contentDescription = "About RoadFrame"
-            setOnClickListener { showAbout() }
+        val settingsButton = makeChip("?", compact = true).apply {
+            contentDescription = "Coach settings"
+            setOnClickListener { showSettings() }
         }
-        root.addView(infoButton, FrameLayout.LayoutParams(dp(44), dp(38)).apply {
+        root.addView(settingsButton, FrameLayout.LayoutParams(dp(44), dp(38)).apply {
             gravity = Gravity.TOP or Gravity.END
             rightMargin = dp(18)
             topMargin = dp(if (landscape) 18 else 37)
         })
 
-        val controlRow = LinearLayout(this).apply {
+        val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val shotRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+        }
+        shotChip = makeChip(shotLabel()).apply {
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            setOnClickListener { showShotPicker() }
+        }
+        val briefChip = makeChip("BRIEF").apply { setOnClickListener { showBrief() } }
+        shotRow.addView(shotChip, LinearLayout.LayoutParams(0, dp(38), 1f))
+        shotRow.addView(briefChip, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(38)).apply { leftMargin = dp(8) })
+        rows.addView(shotRow, LinearLayout.LayoutParams(if (landscape) dp(360) else LinearLayout.LayoutParams.MATCH_PARENT, dp(42)))
+
+        val toolRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        noseChip = makeChip(noseLabel()).apply {
+            contentDescription = "Calibrate the viewing angle: tap while facing the nose of the car"
+            setOnClickListener { calibrateNose() }
+            setOnLongClickListener { clearNose(); true }
         }
         subjectChip = makeChip(getString(R.string.subject_chip, subjectPreference.chipLabel)).apply {
             setOnClickListener {
                 subjectPreference = subjectPreference.next()
+                prefs.subject = subjectPreference
                 text = getString(R.string.subject_chip, subjectPreference.chipLabel)
-                detectedSubject = null
-                resetAdviceStability()
-                refreshAdvice()
+                tracker.clear()
+                coachEngine.reset()
             }
         }
-        modeChip = makeChip(getString(R.string.mode_chip, shotMode.chipLabel)).apply {
-            setOnClickListener {
-                shotMode = shotMode.next()
-                text = getString(R.string.mode_chip, shotMode.chipLabel)
-                manualSelection = null
-                this@MainActivity.overlay.setDetailMode(shotMode == ShotMode.DETAIL)
-                resetAdviceStability()
-                Toast.makeText(this@MainActivity, shotMode.description, Toast.LENGTH_SHORT).show()
-                refreshAdvice()
-            }
-        }
-        controlRow.addView(subjectChip)
-        controlRow.addView(modeChip, LinearLayout.LayoutParams.WRAP_CONTENT, dp(38)).also {
-            (modeChip.layoutParams as LinearLayout.LayoutParams).leftMargin = dp(8)
-        }
-        root.addView(controlRow, FrameLayout.LayoutParams.MATCH_PARENT, dp(42).apply { }).also {
-            (controlRow.layoutParams as FrameLayout.LayoutParams).apply {
-                gravity = Gravity.TOP or Gravity.START
-                leftMargin = dp(18)
-                rightMargin = dp(18)
-                topMargin = dp(if (landscape) 72 else 94)
-            }
-        }
+        toolRow.addView(noseChip, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(38)))
+        toolRow.addView(subjectChip, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(38)).apply { leftMargin = dp(8) })
+        rows.addView(toolRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(42)).apply { topMargin = dp(4) })
+
+        root.addView(rows, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.TOP or Gravity.START
+            leftMargin = dp(18)
+            rightMargin = dp(18)
+            topMargin = dp(if (landscape) 72 else 94)
+        })
 
         val lensRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
         }
-        listOf(0.6f to ".6", 1f to "1×", 3f to "3×", 5f to "5×").forEach { (ratio, label) ->
+        listOf(0.6f to ".6", 1f to "1×", 2f to "2×", 3f to "3×", 5f to "5×").forEach { (ratio, label) ->
             val chip = makeChip(label, compact = true).apply {
                 contentDescription = "$ratio times zoom"
                 setOnClickListener { setZoom(ratio) }
             }
             lensChips[ratio] = chip
-            lensRow.addView(chip, LinearLayout.LayoutParams(dp(48), dp(38)).apply {
-                leftMargin = dp(4)
-                rightMargin = dp(4)
+            lensRow.addView(chip, LinearLayout.LayoutParams(dp(46), dp(38)).apply {
+                leftMargin = dp(3)
+                rightMargin = dp(3)
             })
         }
-        root.addView(lensRow, FrameLayout.LayoutParams(dp(240), dp(42)).apply {
+        root.addView(lensRow, FrameLayout.LayoutParams(dp(270), dp(42)).apply {
             gravity = if (landscape) Gravity.BOTTOM or Gravity.END else Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
             bottomMargin = dp(if (landscape) 24 else 106)
             if (landscape) rightMargin = dp(102)
@@ -232,6 +298,9 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             background = shutterBackground()
             setOnClickListener { capturePhoto() }
+            addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+                this@MainActivity.overlay.setShutter(v.x + v.width / 2f, v.y + v.height / 2f, v.width / 2f)
+            }
         }
         root.addView(shutterButton, FrameLayout.LayoutParams(dp(68), dp(68)).apply {
             gravity = if (landscape) Gravity.BOTTOM or Gravity.END else Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
@@ -243,19 +312,17 @@ class MainActivity : AppCompatActivity() {
         updateLensSelection(1f)
     }
 
+    private fun shotLabel(): String = "${category.number} · ${category.chipLabel}"
+    private fun noseLabel(): String = if (noseHeading == null) "NOSE 0°" else "NOSE ✓"
+
+    // ---------------------------------------------------------------- camera
+
     @Suppress("DEPRECATION")
     private fun startCamera() {
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
             try {
                 val provider = providerFuture.get()
-                vehicleAnalyzer?.close()
-                vehicleAnalyzer = VehicleAnalyzer(
-                    applicationContext,
-                    onFrame = { frame -> runOnUiThread { handleAnalysis(frame) } },
-                    onError = { message -> runOnUiThread { showDetectorError(message) } }
-                )
-
                 val rotation = previewView.display.rotation
                 val preview = Preview.Builder()
                     .setTargetAspectRatio(AspectRatio.RATIO_4_3)
@@ -269,7 +336,7 @@ class MainActivity : AppCompatActivity() {
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
                     .build()
-                    .also { it.setAnalyzer(cameraExecutor, vehicleAnalyzer!!) }
+                imageAnalysis = analysis
 
                 imageCapture = ImageCapture.Builder()
                     .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
@@ -284,114 +351,267 @@ class MainActivity : AppCompatActivity() {
                     analysis,
                     imageCapture
                 )
+                camera?.cameraInfo?.let { readCameraGeometry(it) }
                 observeZoomRange()
+                startAnalyzer()
             } catch (error: Throwable) {
                 showDetectorError(error.message ?: "Camera could not start")
             }
         }, ContextCompat.getMainExecutor(this))
     }
 
+    /** Field of view and clock of the sensor, so box prediction and frame timing are real numbers. */
+    @OptIn(ExperimentalCamera2Interop::class)
+    private fun readCameraGeometry(info: CameraInfo) {
+        try {
+            val camera2 = Camera2CameraInfo.from(info)
+            val size = camera2.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
+            val focal = camera2.getCameraCharacteristic(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)?.firstOrNull()
+            if (size != null && focal != null && focal > 0f) {
+                val long = max(size.width, size.height)
+                val short = min(size.width, size.height)
+                sensorLongFov = Math.toDegrees(2.0 * atan(long / (2.0 * focal))).toFloat()
+                sensorShortFov = Math.toDegrees(2.0 * atan(short / (2.0 * focal))).toFloat()
+            }
+            val source = camera2.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE)
+            realtimeFrameTimestamps = source == CameraMetadata.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME
+        } catch (_: Throwable) {
+            sensorLongFov = DEFAULT_LONG_FOV
+            sensorShortFov = DEFAULT_SHORT_FOV
+            realtimeFrameTimestamps = false
+        }
+    }
+
+    private fun startAnalyzer() {
+        val analysis = imageAnalysis ?: return
+        val preferGpu = prefs.useGpu
+        cameraExecutor.execute {
+            val old = vehicleAnalyzer
+            old?.close()
+            val analyzer = try {
+                VehicleAnalyzer(
+                    applicationContext,
+                    preferGpu = preferGpu,
+                    realtimeFrameTimestamps = realtimeFrameTimestamps,
+                    onFrame = { frame -> runOnUiThread { handleAnalysis(frame) } },
+                    onError = { message -> runOnUiThread { showDetectorError(message) } }
+                )
+            } catch (error: Throwable) {
+                runOnUiThread { showDetectorError(error.message ?: "Detector could not start") }
+                return@execute
+            }
+            vehicleAnalyzer = analyzer
+            runOnUiThread {
+                delegateName = analyzer.delegateName
+                if (preferGpu && analyzer.delegateName != "GPU") {
+                    Toast.makeText(this, "GPU delegate unavailable, using CPU", Toast.LENGTH_SHORT).show()
+                }
+            }
+            analysis.setAnalyzer(cameraExecutor, analyzer)
+        }
+    }
+
+    /** Detector clock: re-anchor the tracked box with the pose the phone had at capture time. */
     private fun handleAnalysis(frame: AnalysisFrame) {
+        val now = SystemClock.uptimeMillis()
         lastStats = frame.stats
-        lastInferenceMillis = frame.inferenceMillis
+        perf.onDetection(now, frame.inferenceMillis, frame.capturedAtNanos)
 
         val best = frame.detections
             .filter { subjectPreference.accepts(it.kind) }
-            .maxByOrNull { it.confidence }
+            .maxByOrNull { it.confidence } ?: return
+        if (overlay.width <= 0 || overlay.height <= 0) return
 
-        if (best != null && overlay.width > 0 && overlay.height > 0) {
-            val mappedBox = CoordinateMapper.toViewNormalized(
-                best.box,
-                frame.imageWidth,
-                frame.imageHeight,
-                frame.rotationDegrees,
-                overlay.width,
-                overlay.height
-            )
-            val next = DetectedSubject(mappedBox, best.kind, best.label, best.confidence)
-            detectedSubject = detectedSubject
-                ?.takeIf { it.kind == next.kind }
-                ?.let { previous ->
-                    previous.copy(
-                        box = previous.box.lerp(next.box, 0.38f),
-                        confidence = next.confidence,
-                        label = next.label
-                    )
-                }
-                ?: next
-            lastDetectionAt = android.os.SystemClock.uptimeMillis()
-        } else if (android.os.SystemClock.uptimeMillis() - lastDetectionAt > 550L) {
-            detectedSubject = null
-        }
-        refreshAdvice()
-    }
-
-    private fun refreshAdvice() {
-        if (!::overlay.isInitialized) return
-        val subject = if (shotMode == ShotMode.DETAIL) {
-            manualSelection?.let {
-                DetectedSubject(
-                    it,
-                    if (subjectPreference == SubjectPreference.MOTORCYCLE) VehicleKind.MOTORCYCLE else VehicleKind.CAR,
-                    "detail",
-                    1f
-                )
-            }
-        } else {
-            detectedSubject
-        }
-        val raw = coachEngine.evaluate(
-            subject,
-            shotMode,
-            rollDegrees,
-            lastStats,
-            detailSelectionPending = shotMode == ShotMode.DETAIL && manualSelection == null
+        val mappedBox = CoordinateMapper.toViewNormalized(
+            best.box,
+            frame.imageWidth,
+            frame.imageHeight,
+            frame.rotationDegrees,
+            overlay.width,
+            overlay.height
         )
-        val shown = stabilize(raw)
-        overlay.update(subject, shown, shotMode, lastInferenceMillis)
-
-        if (shown.ready && !wasReady) {
-            overlay.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-        }
-        wasReady = shown.ready
+        val imageAspect = if (best.box.height() > 1f) best.box.width() / best.box.height() else 1f
+        val (fovX, fovY) = viewFov()
+        tracker.onDetection(
+            mappedBox, best.kind, best.label, best.confidence, imageAspect,
+            poseSensor.poseAt(frame.capturedAtNanos), fovX, fovY, now
+        )
     }
 
-    private fun stabilize(raw: CoachAdvice): CoachAdvice {
-        val existing = stableAdvice
-        if (existing == null || raw.action == AdviceAction.FIND_SUBJECT || raw.action == AdviceAction.SELECT_DETAIL) {
-            stableAdvice = raw
-            candidateAction = null
-            candidateFrames = 0
-            return raw
-        }
-        if (raw.action == existing.action) {
-            stableAdvice = raw
-            candidateAction = null
-            candidateFrames = 0
-            return raw
-        }
+    private fun viewFov(): Pair<Float, Float> = PoseMath.viewFov(
+        sensorLongFov, sensorShortFov, overlay.width, overlay.height,
+        portrait = overlay.height >= overlay.width, zoomRatio = currentZoom
+    )
 
-        if (candidateAction == raw.action) {
-            candidateFrames++
+    /** Display clock: predict, coach, draw. Runs once per vsync, capped at about 60 Hz. */
+    private fun tick() {
+        if (!::overlay.isInitialized || overlay.width == 0) return
+        val nowMs = SystemClock.uptimeMillis()
+        perf.onTick(nowMs)
+        val pose = poseSensor.latest
+        val (fovX, fovY) = viewFov()
+        val portrait = overlay.height >= overlay.width
+
+        val subject = if (category.geometry.tracksVehicle) {
+            tracker.current(pose, fovX, fovY, nowMs)
         } else {
-            candidateAction = raw.action
-            candidateFrames = 1
+            manualSelection?.let {
+                val kind = if (subjectPreference == SubjectPreference.MOTORCYCLE) VehicleKind.MOTORCYCLE else VehicleKind.CAR
+                DetectedSubject(it, kind, "detail", 1f)
+            }
         }
-        if (candidateFrames >= 3) {
-            stableAdvice = raw
-            candidateAction = null
-            candidateFrames = 0
-            return raw
+        val viewingAngle = noseHeading?.let { nose -> pose?.let { PoseMath.wrap(it.headingDeg - nose) } }
+
+        val guidance = coachEngine.evaluate(
+            CoachEngine.Input(
+                category = category,
+                structure = structure,
+                subject = subject,
+                pose = pose,
+                viewingAngle = viewingAngle,
+                stats = lastStats,
+                zoomRatio = currentZoom,
+                portrait = portrait,
+                nowMs = nowMs
+            )
+        )
+
+        val statsLine = if (showStats) perf.line(delegateName, tracker.anchorAgeMs(nowMs), viewingAngle, pose) else null
+        overlay.update(subject, guidance, statsLine)
+
+        if (guidance.shoot && !wasShoot) {
+            overlay.performHapticFeedback(
+                if (Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.LONG_PRESS
+            )
+        } else if (guidance.primary?.rule != lastPrimaryRule && guidance.primary != null) {
+            overlay.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
         }
-        return existing.copy(score = raw.score, targetBox = raw.targetBox)
+        wasShoot = guidance.shoot
+        lastPrimaryRule = guidance.primary?.rule
     }
 
-    private fun resetAdviceStability() {
-        stableAdvice = null
-        candidateAction = null
-        candidateFrames = 0
-        wasReady = false
+    // ---------------------------------------------------------------- calibration
+
+    private fun calibrateNose() {
+        val pose = poseSensor.latest
+        if (!poseSensor.headingAvailable || pose == null) {
+            Toast.makeText(this, "No rotation sensor: the angle cannot be measured on this phone", Toast.LENGTH_LONG).show()
+            return
+        }
+        noseHeading = pose.headingDeg
+        noseChip.text = noseLabel()
+        coachEngine.reset()
+        Toast.makeText(this, "0° set at the nose. Walk around; the coach counts the degrees.", Toast.LENGTH_SHORT).show()
     }
+
+    private fun clearNose() {
+        noseHeading = null
+        noseChip.text = noseLabel()
+        coachEngine.reset()
+        Toast.makeText(this, "Angle calibration cleared", Toast.LENGTH_SHORT).show()
+    }
+
+    // ---------------------------------------------------------------- dialogs
+
+    private fun showShotPicker() {
+        val labels = ShotCategory.entries.map { "${it.number}.  ${it.title}\n      ${it.tag}" }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Which shot?")
+            .setItems(labels) { _, index -> selectCategory(ShotCategory.entries[index]) }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun selectCategory(next: ShotCategory) {
+        category = next
+        prefs.category = next
+        shotChip.text = shotLabel()
+        manualSelection = null
+        overlay.setDetailMode(!next.geometry.tracksVehicle)
+        coachEngine.reset()
+        Toast.makeText(this, "${next.title}: ${next.tag}", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun showBrief() {
+        val b = category.brief
+        val text = buildString {
+            append("WHY\n").append(b.why).append("\n\n")
+            append("PARK\n").append(b.park).append("\n\n")
+            append("STAND\n").append(b.stand).append("\n\n")
+            append("Distance: ").append(b.distance).append('\n')
+            append("Camera height: ").append(b.height).append('\n')
+            append("Lens: ").append(b.lens).append("\n\n")
+            append("CHECK BEFORE YOU SHOOT\n")
+            b.checklist.forEach { append("•  ").append(it).append('\n') }
+            append('\n').append(ARROW_GUIDE)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("${category.number}. ${category.title}")
+            .setMessage(text)
+            .setPositiveButton("Got it", null)
+            .show()
+    }
+
+    private fun showSettings() {
+        val padding = dp(20)
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(padding, dp(8), padding, dp(8))
+        }
+        column.addView(TextView(this).apply {
+            text = "COACH STRUCTURE\nWhich problem the coach fixes first when several are present."
+            textSize = 13f
+        })
+        val group = RadioGroup(this)
+        CoachStructure.entries.forEach { option ->
+            group.addView(RadioButton(this).apply {
+                id = View.generateViewId()
+                text = "${option.label}\n${option.summary}"
+                textSize = 14f
+                isChecked = option == structure
+                tag = option
+                setPadding(dp(4), dp(10), 0, dp(10))
+            })
+        }
+        group.setOnCheckedChangeListener { g, checkedId ->
+            val option = g.findViewById<RadioButton>(checkedId)?.tag as? CoachStructure ?: return@setOnCheckedChangeListener
+            structure = option
+            prefs.structure = option
+            coachEngine.reset()
+        }
+        column.addView(group)
+
+        column.addView(SwitchCompat(this).apply {
+            text = "GPU detector (float16 model). Compare the ms in the stats line."
+            isChecked = prefs.useGpu
+            setPadding(0, dp(12), 0, dp(12))
+            setOnCheckedChangeListener { _, checked ->
+                prefs.useGpu = checked
+                startAnalyzer()
+            }
+        })
+        column.addView(SwitchCompat(this).apply {
+            text = "Show stats: detections per second and ms, lag from capture to coach, age of the last detector box, screen rate, roll, pitch, angle"
+            isChecked = showStats
+            setPadding(0, dp(12), 0, dp(12))
+            setOnCheckedChangeListener { _, checked ->
+                showStats = checked
+                prefs.showStats = checked
+            }
+        })
+        column.addView(TextView(this).apply {
+            text = ABOUT
+            textSize = 13f
+            setPadding(0, dp(16), 0, 0)
+        })
+        AlertDialog.Builder(this)
+            .setTitle("RoadFrame coach")
+            .setView(ScrollView(this).apply { addView(column) })
+            .setPositiveButton("Done", null)
+            .show()
+    }
+
+    // ---------------------------------------------------------------- camera controls
 
     private fun focusAt(x: Float, y: Float) {
         val activeCamera = camera ?: return
@@ -406,13 +626,14 @@ class MainActivity : AppCompatActivity() {
     private fun setZoom(requested: Float) {
         val activeCamera = camera ?: return
         val state = activeCamera.cameraInfo.zoomState.value ?: return
-        requestedZoom = requested.coerceIn(state.minZoomRatio, state.maxZoomRatio)
-        activeCamera.cameraControl.setZoomRatio(requestedZoom)
-        updateLensSelection(requestedZoom)
+        val zoom = requested.coerceIn(state.minZoomRatio, state.maxZoomRatio)
+        activeCamera.cameraControl.setZoomRatio(zoom)
+        updateLensSelection(zoom)
     }
 
     private fun observeZoomRange() {
         camera?.cameraInfo?.zoomState?.observe(this) { state ->
+            currentZoom = state.zoomRatio
             lensChips.forEach { (ratio, chip) ->
                 val available = ratio in state.minZoomRatio..state.maxZoomRatio
                 chip.isEnabled = available
@@ -466,6 +687,8 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    // ---------------------------------------------------------------- widgets
+
     private fun makeChip(label: String, compact: Boolean = false): TextView = TextView(this).apply {
         text = label
         gravity = Gravity.CENTER
@@ -491,22 +714,6 @@ class MainActivity : AppCompatActivity() {
         setStroke(dp(5), Color.argb(210, 7, 9, 11))
     }
 
-    private fun showAbout() {
-        AlertDialog.Builder(this)
-            .setTitle("RoadFrame beta")
-            .setMessage(
-                "The bundled neural model detects cars and motorcycles completely offline. " +
-                    "RoadFrame then measures level, spacing, subject size, exposure and background edges, " +
-                    "and gives one explainable correction at a time.\n\n" +
-                    "Balanced is the neutral training mode. Sale prioritizes clear coverage. Cinematic " +
-                    "leaves deliberate negative space. In Detail mode, drag around a wheel, badge or repaired panel.\n\n" +
-                    "No image leaves this phone. This beta does not yet recognise wheel direction or distinguish " +
-                    "front, side and rear three-quarter angles."
-            )
-            .setPositiveButton("Got it", null)
-            .show()
-    }
-
     private fun showCameraPermissionMessage() {
         AlertDialog.Builder(this)
             .setTitle("Camera permission needed")
@@ -522,4 +729,68 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    /** Counters for the stats line: measured, not guessed. */
+    private class PerfMeter {
+        private var detections = 0
+        private var detectionRate = 0
+        private var detectionWindowStart = 0L
+        private var ticks = 0
+        private var tickRate = 0
+        private var tickWindowStart = 0L
+        private var inferenceMs = 0L
+        private var pipelineMs = 0L
+
+        fun onDetection(nowMs: Long, inference: Long, capturedAtNanos: Long) {
+            inferenceMs = inference
+            pipelineMs = ((SystemClock.elapsedRealtimeNanos() - capturedAtNanos) / 1_000_000L).coerceIn(0L, 5_000L)
+            detections++
+            if (nowMs - detectionWindowStart >= 1000L) {
+                detectionRate = detections
+                detections = 0
+                detectionWindowStart = nowMs
+            }
+        }
+
+        fun onTick(nowMs: Long) {
+            ticks++
+            if (nowMs - tickWindowStart >= 1000L) {
+                tickRate = ticks
+                ticks = 0
+                tickWindowStart = nowMs
+            }
+        }
+
+        fun line(delegate: String, anchorAgeMs: Long, viewingAngle: Float?, pose: Pose?): String = buildString {
+            append("DET ").append(detectionRate).append("/s ").append(inferenceMs).append("ms ").append(delegate)
+            append("  ·  LAG ").append(pipelineMs).append("ms")
+            append("  ·  BOX ").append(anchorAgeMs).append("ms")
+            append("  ·  UI ").append(tickRate).append("/s")
+            pose?.let { append("  ·  ROLL ").append(it.rollDeg.roundToInt()).append("° PITCH ").append(it.pitchDeg.roundToInt()).append('°') }
+            viewingAngle?.let { append("  ·  ANGLE ").append(it.roundToInt()).append('°') }
+        }
+    }
+
+    companion object {
+        /** About 60 Hz even on a 120 Hz panel: the coach does not need more, the battery does. */
+        private const val MIN_TICK_NANOS = 15_000_000L
+        /** 24 mm-equivalent main camera, 4:3 sensor: used until the real characteristics are read. */
+        private const val DEFAULT_LONG_FOV = 72f
+        private const val DEFAULT_SHORT_FOV = 56f
+
+        private const val ARROW_GUIDE = "HOW TO READ THE ARROWS\n" +
+            "•  Chevron at the left or right edge: turn the phone that way (AIM).\n" +
+            "•  Chevron at the top or bottom: tilt that way, keep the phone at the same height.\n" +
+            "•  Arrows beside the car pointing in: get closer or zoom in. Pointing out: back up.\n" +
+            "•  Curved arrow with degrees: walk around the car that way, camera on the car. Tap NOSE once while facing the nose head-on so the degrees are real.\n" +
+            "•  Double chevron on the right pointing down: the phone points down, crouch lower and aim level.\n" +
+            "•  Line in the middle: the horizon. Turn the phone until it is green and flat.\n" +
+            "•  Ring around the shutter: fills as the errors shrink, green plus a tick means shoot."
+
+        private const val ABOUT = "Everything runs on the phone: the bundled detector finds the car about ten " +
+            "times a second, the gyro carries the box between detections, and the coach turns the numbers into one " +
+            "instruction at a time. No image leaves the phone. This build measures where the car is and how the " +
+            "phone is held; it does not yet see wheel direction or tell the front from the rear by itself, so tap " +
+            "NOSE once per car for the viewing angle."
+    }
 }

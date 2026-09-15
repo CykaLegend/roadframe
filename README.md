@@ -1,63 +1,114 @@
 # RoadFrame — on-device car and motorcycle photo coach
 
-RoadFrame is a native Android camera prototype that detects cars and motorcycles locally and
-turns measurable composition problems into one live instruction at a time. It is designed for
-the Samsung Galaxy S25 Ultra but uses standard CameraX APIs and should run on most modern Android
-phones.
+RoadFrame is a native Android camera app that watches the live preview, understands where the
+car is and how the phone is held, and tells you one physical move at a time: **WALK LEFT 30°**,
+**BACK**, **LOWER**, **LEVEL**, **PERFECT**, **SHOOT**. Everything runs on the phone. It is designed
+for the Samsung Galaxy S25 Ultra but uses standard CameraX and sensor APIs.
 
-## What works in this beta
+## How it works: two clocks
 
-- Live CameraX preview and full-resolution photo capture.
-- Bundled EfficientDet-Lite0 neural model; no network connection is required.
-- Automatic car, van/truck, bus and motorcycle recognition.
-- Explainable coaching for level, safe margins, subject size, frame position, exposure and
-  coarse background clutter.
-- Separate Balanced, Sale and Cinematic targets.
-- Detail mode: drag a box around a wheel, badge, repair or cleaned panel when the whole vehicle
-  is no longer visible to the detector.
-- Camera tap-to-focus, zoom shortcuts and photos saved to `Pictures/RoadFrame`.
-- No account, telemetry, upload or `INTERNET` permission.
+```
+CameraX Preview ──────────────────────────────────────────► screen (smooth, untouched)
+CameraX ImageAnalysis (640×480, KEEP_ONLY_LATEST)
+   └─► VehicleAnalyzer: EfficientDet-Lite0, ~10 Hz, own thread ─► car box + capture time
+Gravity + game-rotation-vector sensors, up to 200 Hz ─► roll, pitch, heading
+   └─► SubjectTracker: predicts the box from the heading and pitch change since the
+        last detection (pixel shift = focal length × tan Δ), so the box moves with you
+        between detections and the detector's own delay is cancelled out
+Every screen frame (~60 Hz): CoachEngine (pure Kotlin, hysteresis) ─► one instruction + arrows
+```
 
-## Install the APK
+The detector only *re-anchors* the box. The instruction reacts as fast as the gyro, not as
+fast as the neural network.
 
-1. Copy `RoadFrame-0.1.0-beta-arm64.apk` to the Android phone.
-2. Open it and allow installation from the file manager when Android asks.
-3. Grant camera access.
-4. Point the camera at one vehicle. Use the **SUBJECT** button if Auto chooses the wrong type.
-5. Follow one instruction until it changes. A green box and vibration mean the measurable
-   composition target is satisfied.
+## Shots, not modes
 
-The `.6×` shortcut is enabled only when CameraX reports that the phone exposes an ultra-wide
-zoom ratio. Samsung firmware can expose physical lenses differently, so a shortcut may select a
-logical-camera zoom rather than promising a particular sensor.
+Pick a shot with the **SHOT** chip. Each shot has a target viewing angle, a fill fraction, a
+centre, a "get low" flag and a written brief (**BRIEF** chip: where to park, where to stand,
+distance, height, lens, checklist, and how to read the arrows).
 
-## Modes
+| # | Shot | What the coach measures |
+|---|------|-------------------------|
+| 1 | Front three-quarter | angle ±45°, fill 72 %, low camera, room in front of the nose |
+| 2 | Rear three-quarter | angle ±135°, fill 72 %, low camera, room in front of the nose |
+| 3 | Side profile | angle ±90° (±6°), fill 84 %, low camera |
+| 4 | Front straight-on | angle 0° (±6°), fill 62 %, low camera |
+| 5 | Rear straight-on | angle 180° (±6°), fill 62 %, low camera |
+| 6–8 | Wheel, headlight, interior | drag a box around the detail; margins, size, level, light |
+| 9 | Car in a place | angle ±45° (±15°), fill 24 %, car on a thirds point |
+| 10 | Rolling shot | brief only: the phone is in a moving car |
+| 11 | Blue hour | as the hero shot, tripod and timer in the brief |
 
-- **Balanced:** neutral training composition with comfortable margins.
-- **Sale:** centered and slightly wider so the complete vehicle is documented clearly.
-- **Cinematic:** smaller subject placed left, with deliberate negative space on the right.
-- **Detail:** manually mark a close-up subject, then receive framing and exposure coaching.
+**Viewing angle, offline.** The generic detector cannot tell the nose from the tail. Stand in
+front of the car, face the nose head-on, tap **NOSE 0°**. From then on the angle is the change in
+camera heading since that tap, taken from the gyro-based rotation vector (no compass, so the
+steel of the car cannot bend it). The coach then says "WALK LEFT 30°" with a curved arrow.
+Without the tap it falls back to the shape of the box (wide = side, tall = end) and just says
+"WALK AROUND".
 
-## Honest beta boundary
+## One instruction at a time
 
-This build understands *where the detected subject is* and can measure the frame around it. It
-does not yet understand wheel direction, identify the front versus rear of a vehicle, or judge a
-specific three-quarter angle like an experienced photographer. Those require a vehicle-keypoint
-model trained on labelled car and motorcycle photographs. The architecture keeps that detector
-replaceable so a future model can add those capabilities without rewriting the camera or coach.
+The engine evaluates every rule every frame, but speaks only the first active one in the
+chosen **coach structure** (the `?` button):
+
+- **RoadFrame** (default): cut-off car, level if far off, angle, size, aim left/right, aim
+  up/down, get lower, fine level, light, background. Big moves first; each later step survives
+  the earlier ones.
+- **Handoff**: the order from the build brief. Aim, size, height, angle, level, light,
+  background.
+- **Prototype**: the order of the browser prototype. Angle, height, size, aim, level, light.
+
+Every rule has an enter threshold and a smaller exit threshold (hysteresis), so an instruction
+appears as soon as the error is clearly there and only disappears once it is clearly fixed. When
+a step is fixed the coach says **GOOD** for half a second, then the next word. When everything is
+inside tolerance the ring around the shutter goes green, the phone ticks, and the headline says
+**PERFECT**, then **SHOOT**.
+
+## Arrows
+
+- Chevron at the left or right edge: turn the phone that way.
+- Chevron at the top or bottom: tilt the phone that way.
+- Arrows beside the car pointing in: closer or zoom in ("ZOOM 3×" when the brief wants a
+  longer lens than you have selected). Pointing out: back up.
+- Curved arrow with degrees: walk around the car that way, camera on the car.
+- Double chevron on the right: the phone points down, crouch and aim level.
+- Line in the middle: the horizon, rotating with the phone. Green means level.
+- Ring around the shutter: fills as the errors shrink.
+
+## Stats line
+
+Switch it on under `?`. `DET 9/s 41ms GPU · LAG 78ms · BOX 60ms · UI 60/s · ROLL 1° PITCH 4° · ANGLE -38°`
+
+- DET: detections per second and inference time, and which delegate runs (CPU int8 model or
+  GPU float16 model, chosen under `?`).
+- LAG: capture to coach for the last detection.
+- BOX: age of the last detector anchor. The box on screen is predicted forward from it.
+- UI: screen updates per second.
+
+These are measured on the phone, not estimated.
+
+## Honest boundary
+
+This build measures where the car is and how the phone is held. It does **not** see wheel
+direction, front versus rear by itself, keypoints, or judge reflections and clutter beyond edge
+density. Those need a vehicle-specific model; the detector is replaceable so one can be added
+without rewriting the camera, sensors or coach. There is no cloud, no account, no telemetry and
+no `INTERNET` permission.
 
 ## Build from source
 
-Requirements: JDK 17 and Android SDK 35.
+Requirements: JDK 17 or newer and Android SDK 35.
 
 ```bash
 ./gradlew test assembleDebug
 ```
 
-The S25-compatible debug APK is generated at
-`app/build/outputs/apk/debug/app-arm64-v8a-debug.apk`.
+The S25-compatible debug APK is at `app/build/outputs/apk/debug/app-arm64-v8a-debug.apk`.
+`CoachEngine`, `PoseMath`, `SubjectTracker` and the shot data are pure Kotlin with unit tests
+in `app/src/test`.
 
-## Included model
+## Included models
 
-`app/src/main/assets/efficientdet_lite0.tflite` is Google's EfficientDet-Lite0 object detector
-distributed for MediaPipe Tasks. The source URL is documented in `THIRD_PARTY_NOTICES.md`.
+`app/src/main/assets/efficientdet_lite0.tflite` (int8, for the CPU) and
+`efficientdet_lite0_fp16.tflite` (float16, for the GPU delegate) are Google's EfficientDet-Lite0
+detectors distributed for MediaPipe Tasks. Source URLs are in `THIRD_PARTY_NOTICES.md`.

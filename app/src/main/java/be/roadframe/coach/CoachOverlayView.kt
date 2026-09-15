@@ -4,30 +4,35 @@ import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Typeface
-import android.text.Layout
-import android.text.StaticLayout
 import android.text.TextPaint
+import android.text.TextUtils
 import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
 import androidx.core.graphics.ColorUtils
-import kotlin.math.atan2
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 
+/**
+ * Draws the coach: the car box, the dashed target, one set of arrows for the primary instruction,
+ * a level line that rotates with the phone, a ring around the shutter that fills as the errors
+ * shrink, and the headline with its one-line reason. Deliberately sparse: one instruction, not a
+ * HUD. Nothing here allocates per frame except text measurement.
+ */
 class CoachOverlayView(context: Context) : View(context) {
     var onManualSelection: ((NormalizedBox?) -> Unit)? = null
     var onFocusTap: ((Float, Float) -> Unit)? = null
 
     private var subject: DetectedSubject? = null
-    private var advice: CoachAdvice? = null
-    private var mode: ShotMode = ShotMode.BALANCED
-    private var inferenceMillis: Long = 0
+    private var guidance: Guidance? = null
+    private var statsLine: String? = null
     private var detailMode = false
     private var selectionStartX = 0f
     private var selectionStartY = 0f
@@ -36,58 +41,99 @@ class CoachOverlayView(context: Context) : View(context) {
     private var focusY = -1f
     private var focusAlpha = 0f
     private var flashAlpha = 0f
+    private var shutterCenterX = -1f
+    private var shutterCenterY = -1f
+    private var shutterRadius = 0f
 
     private val lime = Color.rgb(200, 255, 54)
     private val amber = Color.rgb(255, 176, 32)
     private val white = Color.rgb(247, 249, 250)
     private val boxPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = dp(2.2f)
+        strokeWidth = dp(2.5f)
+        strokeCap = Paint.Cap.ROUND
     }
     private val targetPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
+        strokeWidth = dp(2.5f)
+        color = ColorUtils.setAlphaComponent(amber, 210)
+        pathEffect = DashPathEffect(floatArrayOf(dp(9f), dp(7f)), 0f)
+    }
+    private val thinPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
         strokeWidth = dp(1.5f)
-        color = ColorUtils.setAlphaComponent(white, 155)
-    }
-    private val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(226, 7, 9, 11)
-        style = Paint.Style.FILL
-    }
-    private val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = white
-        textSize = sp(20f)
-        typeface = Typeface.create("sans", Typeface.BOLD)
     }
-    private val bodyPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(205, 211, 215)
-        textSize = sp(13.5f)
-        typeface = Typeface.create("sans", Typeface.NORMAL)
+    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = amber
+        setShadowLayer(dp(4f), 0f, dp(1f), Color.argb(150, 0, 0, 0))
     }
-    private val metaPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(195, 201, 205)
-        textSize = sp(11f)
-        typeface = Typeface.create("sans", Typeface.BOLD)
-        letterSpacing = 0.08f
+    private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = dp(5f)
+        strokeCap = Paint.Cap.ROUND
     }
-    private val arrowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = lime
+    private val levelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = dp(3f)
+        strokeCap = Paint.Cap.ROUND
+        setShadowLayer(dp(4f), 0f, 0f, Color.argb(170, 0, 0, 0))
+    }
+    private val orbitPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = dp(4f)
         strokeCap = Paint.Cap.ROUND
-        strokeJoin = Paint.Join.ROUND
+        color = amber
+        setShadowLayer(dp(4f), 0f, 0f, Color.argb(170, 0, 0, 0))
+    }
+    private val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(215, 7, 9, 11)
+        style = Paint.Style.FILL
+    }
+    private val headlinePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = white
+        textSize = sp(34f)
+        typeface = Typeface.create("sans", Typeface.BOLD)
+        textAlign = Paint.Align.CENTER
+        letterSpacing = 0.02f
+        setShadowLayer(dp(5f), 0f, dp(1f), Color.argb(200, 0, 0, 0))
+    }
+    private val whyPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(225, 247, 249, 250)
+        textSize = sp(14f)
+        typeface = Typeface.create("sans", Typeface.NORMAL)
+        textAlign = Paint.Align.CENTER
+        setShadowLayer(dp(4f), 0f, dp(1f), Color.argb(220, 0, 0, 0))
+    }
+    private val metaPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(200, 247, 249, 250)
+        textSize = sp(11f)
+        typeface = Typeface.create("sans", Typeface.BOLD)
+        letterSpacing = 0.06f
+        textAlign = Paint.Align.CENTER
+        setShadowLayer(dp(3f), 0f, dp(1f), Color.argb(220, 0, 0, 0))
+    }
+    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = white
+        textSize = sp(11f)
+        typeface = Typeface.create("sans", Typeface.BOLD)
+        letterSpacing = 0.06f
+    }
+    private val path = Path()
+    private val arc = RectF()
+
+    fun update(subject: DetectedSubject?, guidance: Guidance, statsLine: String?) {
+        this.subject = subject
+        this.guidance = guidance
+        this.statsLine = statsLine
+        invalidate()
     }
 
-    fun update(
-        subject: DetectedSubject?,
-        advice: CoachAdvice,
-        mode: ShotMode,
-        inferenceMillis: Long
-    ) {
-        this.subject = subject
-        this.advice = advice
-        this.mode = mode
-        this.inferenceMillis = inferenceMillis
-        invalidate()
+    fun setShutter(centerX: Float, centerY: Float, radius: Float) {
+        shutterCenterX = centerX
+        shutterCenterY = centerY
+        shutterRadius = radius
     }
 
     fun setDetailMode(enabled: Boolean) {
@@ -131,139 +177,177 @@ class CoachOverlayView(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val currentAdvice = advice
+        val current = guidance
+        val landscape = width > height
+        val textArea = textArea(landscape)
+        val shoot = current?.shoot == true
 
-        currentAdvice?.targetBox?.let { drawGuide(canvas, it) }
-        subject?.let { drawSubject(canvas, it, currentAdvice?.ready == true) }
+        val currentSubject = subject
+        if (currentSubject != null) {
+            current?.arrows?.target?.let { drawTarget(canvas, it) }
+            drawSubject(canvas, currentSubject, shoot)
+        }
         manualRect?.let {
-            boxPaint.color = if (currentAdvice?.ready == true) lime else amber
-            boxPaint.pathEffect = null
+            boxPaint.color = if (shoot) lime else amber
             canvas.drawRoundRect(it, dp(10f), dp(10f), boxPaint)
         }
-        currentAdvice?.let { drawArrow(canvas, it) }
-        drawLevelLine(canvas)
-        currentAdvice?.let { drawAdviceCard(canvas, it) }
+        if (current != null) {
+            drawArrows(canvas, current.arrows, currentSubject, textArea, landscape)
+            drawLevel(canvas, current.arrows.rollDeg, landscape)
+            drawShutterRing(canvas, current)
+            drawText(canvas, current, textArea)
+        }
         drawFocus(canvas)
-
         if (flashAlpha > 0f) {
             canvas.drawColor(Color.argb((flashAlpha * 255).toInt(), 255, 255, 255))
         }
     }
 
-    private fun drawGuide(canvas: Canvas, box: NormalizedBox) {
-        val rect = box.toPixels()
-        val corner = min(rect.width(), rect.height()) * 0.16f
-        targetPaint.color = ColorUtils.setAlphaComponent(if (advice?.ready == true) lime else white, 165)
-        val path = Path().apply {
-            moveTo(rect.left, rect.top + corner); lineTo(rect.left, rect.top); lineTo(rect.left + corner, rect.top)
-            moveTo(rect.right - corner, rect.top); lineTo(rect.right, rect.top); lineTo(rect.right, rect.top + corner)
-            moveTo(rect.right, rect.bottom - corner); lineTo(rect.right, rect.bottom); lineTo(rect.right - corner, rect.bottom)
-            moveTo(rect.left + corner, rect.bottom); lineTo(rect.left, rect.bottom); lineTo(rect.left, rect.bottom - corner)
-        }
-        canvas.drawPath(path, targetPaint)
+    /** Where the headline lives: left, right and the baseline of the headline. */
+    private fun textArea(landscape: Boolean): RectF = if (landscape) {
+        RectF(dp(18f), height - dp(96f), (width - dp(370f)).coerceAtLeast(dp(320f)), height - dp(58f))
+    } else {
+        RectF(dp(18f), height - dp(236f), width - dp(18f), height - dp(200f))
     }
 
-    private fun drawSubject(canvas: Canvas, detected: DetectedSubject, ready: Boolean) {
+    private fun drawTarget(canvas: Canvas, box: NormalizedBox) {
+        val rect = box.toPixels()
+        drawCorners(canvas, rect, targetPaint, min(rect.width(), rect.height()) * 0.18f)
+    }
+
+    private fun drawSubject(canvas: Canvas, detected: DetectedSubject, shoot: Boolean) {
         val rect = detected.box.toPixels()
-        boxPaint.color = if (ready) lime else amber
-        boxPaint.pathEffect = null
-        canvas.drawRoundRect(rect, dp(11f), dp(11f), boxPaint)
+        boxPaint.color = if (shoot) lime else white
+        drawCorners(canvas, rect, boxPaint, min(rect.width(), rect.height()) * 0.14f)
+        if (detected.label == "detail") return
 
         val label = "${detected.kind.displayName.uppercase()}  ${(detected.confidence * 100).toInt()}%"
-        val labelWidth = metaPaint.measureText(label) + dp(16f)
-        val labelRect = RectF(rect.left, rect.top - dp(27f), rect.left + labelWidth, rect.top - dp(5f))
-        cardPaint.color = Color.argb(215, 7, 9, 11)
-        canvas.drawRoundRect(labelRect, dp(7f), dp(7f), cardPaint)
-        metaPaint.color = if (ready) lime else white
-        canvas.drawText(label, labelRect.left + dp(8f), labelRect.bottom - dp(6f), metaPaint)
+        val labelWidth = labelPaint.measureText(label) + dp(14f)
+        val top = (rect.top - dp(24f)).coerceAtLeast(dp(4f))
+        val labelRect = RectF(rect.left.coerceAtLeast(0f), top, rect.left.coerceAtLeast(0f) + labelWidth, top + dp(19f))
+        canvas.drawRoundRect(labelRect, dp(6f), dp(6f), cardPaint)
+        labelPaint.color = if (shoot) lime else white
+        canvas.drawText(label, labelRect.left + dp(7f), labelRect.bottom - dp(5f), labelPaint)
     }
 
-    private fun drawLevelLine(canvas: Canvas) {
-        val y = height * 0.50f
-        targetPaint.color = ColorUtils.setAlphaComponent(white, 45)
-        targetPaint.strokeWidth = dp(1f)
-        canvas.drawLine(width * 0.43f, y, width * 0.57f, y, targetPaint)
-        canvas.drawCircle(width * 0.5f, y, dp(2.5f), targetPaint)
+    private fun drawCorners(canvas: Canvas, rect: RectF, paint: Paint, cornerLength: Float) {
+        val corner = cornerLength.coerceIn(dp(8f), dp(40f))
+        path.reset()
+        path.moveTo(rect.left, rect.top + corner); path.lineTo(rect.left, rect.top); path.lineTo(rect.left + corner, rect.top)
+        path.moveTo(rect.right - corner, rect.top); path.lineTo(rect.right, rect.top); path.lineTo(rect.right, rect.top + corner)
+        path.moveTo(rect.right, rect.bottom - corner); path.lineTo(rect.right, rect.bottom); path.lineTo(rect.right - corner, rect.bottom)
+        path.moveTo(rect.left + corner, rect.bottom); path.lineTo(rect.left, rect.bottom); path.lineTo(rect.left, rect.bottom - corner)
+        canvas.drawPath(path, paint)
     }
 
-    private fun drawArrow(canvas: Canvas, current: CoachAdvice) {
-        if (current.arrowX == 0f && current.arrowY == 0f) return
-        val centerX = subject?.box?.centerX?.times(width) ?: width / 2f
-        val centerY = subject?.box?.centerY?.times(height) ?: height / 2f
-        val length = dp(64f)
-        val magnitude = kotlin.math.sqrt(current.arrowX * current.arrowX + current.arrowY * current.arrowY)
-            .coerceAtLeast(0.001f)
-        val dx = current.arrowX / magnitude * length
-        val dy = current.arrowY / magnitude * length
-        val endX = centerX + dx
-        val endY = centerY + dy
-        canvas.drawLine(centerX, centerY, endX, endY, arrowPaint)
-
-        val angle = atan2(dy, dx)
-        val head = dp(15f)
-        val leftAngle = angle + Math.PI.toFloat() * 0.82f
-        val rightAngle = angle - Math.PI.toFloat() * 0.82f
-        val path = Path().apply {
-            moveTo(endX + cos(leftAngle) * head, endY + sin(leftAngle) * head)
-            lineTo(endX, endY)
-            lineTo(endX + cos(rightAngle) * head, endY + sin(rightAngle) * head)
+    private fun drawArrows(canvas: Canvas, arrows: Arrows, detected: DetectedSubject?, textArea: RectF, landscape: Boolean) {
+        val topSafe = dp(if (landscape) 130f else 150f)
+        val bottomSafe = textArea.top - dp(40f)
+        if (arrows.panX != 0) {
+            val x = if (arrows.panX < 0) dp(28f) else width - dp(28f)
+            drawChevron(canvas, x, height / 2f, if (arrows.panX < 0) Dir.LEFT else Dir.RIGHT, dp(22f))
         }
-        canvas.drawPath(path, arrowPaint)
+        if (arrows.panY != 0) {
+            val y = if (arrows.panY < 0) topSafe else bottomSafe
+            drawChevron(canvas, width / 2f, y, if (arrows.panY < 0) Dir.UP else Dir.DOWN, dp(22f))
+        }
+        if (arrows.size != 0 && detected != null) {
+            val rect = detected.box.toPixels()
+            val margin = dp(24f)
+            val inward = arrows.size > 0
+            drawChevron(canvas, rect.left - margin, rect.centerY(), if (inward) Dir.RIGHT else Dir.LEFT, dp(13f))
+            drawChevron(canvas, rect.right + margin, rect.centerY(), if (inward) Dir.LEFT else Dir.RIGHT, dp(13f))
+        }
+        arrows.orbitDeg?.let { drawOrbit(canvas, textArea.centerX(), textArea.top - dp(46f), dp(38f), it > 0f) }
+        if (arrows.lower) {
+            drawChevron(canvas, width - dp(44f), height / 2f + dp(70f), Dir.DOWN, dp(18f))
+            drawChevron(canvas, width - dp(44f), height / 2f + dp(96f), Dir.DOWN, dp(18f))
+        }
     }
 
-    private fun drawAdviceCard(canvas: Canvas, current: CoachAdvice) {
-        val horizontalMargin = dp(18f)
-        val landscape = width > height
-        val bottomInset = if (landscape) dp(18f) else dp(158f)
-        val cardHeight = if (landscape) dp(112f) else dp(136f)
-        val cardRight = if (landscape) {
-            (width - dp(380f)).coerceAtLeast(dp(360f))
+    private enum class Dir { LEFT, RIGHT, UP, DOWN }
+
+    private fun drawChevron(canvas: Canvas, cx: Float, cy: Float, dir: Dir, size: Float) {
+        path.reset()
+        when (dir) {
+            Dir.LEFT -> { path.moveTo(cx + size * 0.6f, cy - size); path.lineTo(cx - size * 0.6f, cy); path.lineTo(cx + size * 0.6f, cy + size) }
+            Dir.RIGHT -> { path.moveTo(cx - size * 0.6f, cy - size); path.lineTo(cx + size * 0.6f, cy); path.lineTo(cx - size * 0.6f, cy + size) }
+            Dir.UP -> { path.moveTo(cx - size, cy + size * 0.6f); path.lineTo(cx, cy - size * 0.6f); path.lineTo(cx + size, cy + size * 0.6f) }
+            Dir.DOWN -> { path.moveTo(cx - size, cy - size * 0.6f); path.lineTo(cx, cy + size * 0.6f); path.lineTo(cx + size, cy - size * 0.6f) }
+        }
+        path.close()
+        canvas.drawPath(path, fillPaint)
+    }
+
+    /** A curved arrow over the headline: walk around the car this way. */
+    private fun drawOrbit(canvas: Canvas, cx: Float, cy: Float, radius: Float, left: Boolean) {
+        arc.set(cx - radius, cy - radius, cx + radius, cy + radius)
+        canvas.drawArc(arc, 200f, 140f, false, orbitPaint)
+        val endAngle = Math.toRadians(if (left) 200.0 else 340.0)
+        val endX = cx + radius * cos(endAngle).toFloat()
+        val endY = cy + radius * sin(endAngle).toFloat()
+        val head = dp(12f)
+        path.reset()
+        if (left) {
+            path.moveTo(endX - head * 0.2f, endY - head); path.lineTo(endX - head * 0.3f, endY + head * 0.6f); path.lineTo(endX + head, endY + head * 0.1f)
         } else {
-            width - horizontalMargin
+            path.moveTo(endX + head * 0.2f, endY - head); path.lineTo(endX + head * 0.3f, endY + head * 0.6f); path.lineTo(endX - head, endY + head * 0.1f)
         }
-        val rect = RectF(horizontalMargin, height - bottomInset - cardHeight, cardRight, height - bottomInset)
-        cardPaint.color = Color.argb(226, 7, 9, 11)
-        canvas.drawRoundRect(rect, dp(20f), dp(20f), cardPaint)
+        path.close()
+        canvas.drawPath(path, fillPaint)
+    }
 
-        val accentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = if (current.ready) lime else amber
-            strokeWidth = dp(3f)
-            strokeCap = Paint.Cap.ROUND
-        }
-        canvas.drawLine(rect.left + dp(16f), rect.top + dp(18f), rect.left + dp(16f), rect.bottom - dp(18f), accentPaint)
-
-        metaPaint.color = if (current.ready) lime else amber
-        canvas.drawText(
-            "${mode.chipLabel}  •  ${current.score}/100  •  ${inferenceMillis}MS",
-            rect.left + dp(30f),
-            rect.top + dp(24f),
-            metaPaint
-        )
-        canvas.drawText(current.title, rect.left + dp(30f), rect.top + dp(56f), titlePaint)
-
-        val textWidth = (rect.width() - dp(50f)).toInt().coerceAtLeast(1)
-        val layout = StaticLayout.Builder.obtain(
-            current.explanation,
-            0,
-            current.explanation.length,
-            bodyPaint,
-            textWidth
-        )
-            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
-            .setIncludePad(false)
-            .setMaxLines(2)
-            .build()
+    private fun drawLevel(canvas: Canvas, rollDeg: Float?, landscape: Boolean) {
+        if (rollDeg == null) return
+        val cx = width / 2f
+        val cy = height * (if (landscape) 0.5f else 0.46f)
+        val length = min(dp(180f), width * 0.42f)
+        val gap = dp(22f)
+        thinPaint.color = Color.argb(140, 255, 255, 255)
+        canvas.drawLine(cx - gap, cy, cx + gap, cy, thinPaint)
+        levelPaint.color = if (abs(rollDeg) <= CoachEngine.LEVEL_ENTER) lime else amber
         canvas.save()
-        canvas.translate(rect.left + dp(30f), rect.top + dp(70f))
-        layout.draw(canvas)
+        canvas.rotate(-rollDeg, cx, cy)
+        canvas.drawLine(cx - length / 2f, cy, cx - gap, cy, levelPaint)
+        canvas.drawLine(cx + gap, cy, cx + length / 2f, cy, levelPaint)
         canvas.restore()
+    }
+
+    private fun drawShutterRing(canvas: Canvas, current: Guidance) {
+        if (shutterCenterX < 0f) return
+        val r = shutterRadius + dp(7f)
+        arc.set(shutterCenterX - r, shutterCenterY - r, shutterCenterX + r, shutterCenterY + r)
+        ringPaint.color = Color.argb(60, 255, 255, 255)
+        canvas.drawArc(arc, 0f, 360f, false, ringPaint)
+        ringPaint.color = if (current.shoot) lime else amber
+        canvas.drawArc(arc, -90f, 360f * current.score / 100f, false, ringPaint)
+    }
+
+    private fun drawText(canvas: Canvas, current: Guidance, textArea: RectF) {
+        headlinePaint.color = if (current.shoot) lime else white
+        val headline = TextUtils.ellipsize(current.headline, headlinePaint, textArea.width(), TextUtils.TruncateAt.END)
+        canvas.drawText(headline, 0, headline.length, textArea.centerX(), textArea.bottom, headlinePaint)
+        val why = TextUtils.ellipsize(current.why, whyPaint, textArea.width(), TextUtils.TruncateAt.END)
+        canvas.drawText(why, 0, why.length, textArea.centerX(), textArea.bottom + dp(21f), whyPaint)
+        var line = textArea.bottom + dp(38f)
+        if (current.secondary.isNotEmpty()) {
+            metaPaint.color = ColorUtils.setAlphaComponent(amber, 230)
+            val next = "THEN  " + current.secondary.joinToString("  ·  ") { it.text }
+            val text = TextUtils.ellipsize(next, metaPaint, textArea.width(), TextUtils.TruncateAt.END)
+            canvas.drawText(text, 0, text.length, textArea.centerX(), line, metaPaint)
+            line += dp(16f)
+        }
+        statsLine?.let {
+            metaPaint.color = Color.argb(170, 247, 249, 250)
+            val text = TextUtils.ellipsize(it, metaPaint, textArea.width(), TextUtils.TruncateAt.END)
+            canvas.drawText(text, 0, text.length, textArea.centerX(), line, metaPaint)
+        }
     }
 
     private fun drawFocus(canvas: Canvas) {
         if (focusAlpha <= 0f || focusX < 0f) return
-        targetPaint.color = ColorUtils.setAlphaComponent(lime, (focusAlpha * 230).toInt())
-        targetPaint.strokeWidth = dp(1.5f)
-        canvas.drawCircle(focusX, focusY, dp(24f) + dp(6f) * (1f - focusAlpha), targetPaint)
+        thinPaint.color = ColorUtils.setAlphaComponent(lime, (focusAlpha * 230).toInt())
+        canvas.drawCircle(focusX, focusY, dp(24f) + dp(6f) * (1f - focusAlpha), thinPaint)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
