@@ -96,6 +96,8 @@ class MainActivity : AppCompatActivity() {
     private var sensorShortFov = DEFAULT_SHORT_FOV
     private var realtimeFrameTimestamps = false
     private var delegateName = "CPU"
+    /** What the detector last reported, raw, for the stats line: "car 63%" or "none". */
+    private var lastDetectionSummary = "none"
 
     private var wasShoot = false
     private var lastPrimaryRule: Rule? = null
@@ -416,6 +418,8 @@ class MainActivity : AppCompatActivity() {
         val now = SystemClock.uptimeMillis()
         lastStats = frame.stats
         perf.onDetection(now, frame.inferenceMillis, frame.capturedAtNanos)
+        lastDetectionSummary = if (frame.detections.isEmpty()) "none" else
+            frame.detections.joinToString(" ") { "${it.label} ${(it.confidence * 100).toInt()}%" }
 
         val best = frame.detections
             .filter { subjectPreference.accepts(it.kind) }
@@ -476,7 +480,12 @@ class MainActivity : AppCompatActivity() {
             )
         )
 
-        val statsLine = if (showStats) perf.line(delegateName, tracker.anchorAgeMs(nowMs), viewingAngle, pose) else null
+        val statsLine = if (showStats) {
+            val analyzer = vehicleAnalyzer
+            val frames = if (analyzer == null) "no analyzer" else "${analyzer.framesSubmitted}/${analyzer.resultsReceived}"
+            perf.line(delegateName, tracker.anchorAgeMs(nowMs), viewingAngle, pose) +
+                "\nFRAMES $frames  ·  SEES $lastDetectionSummary"
+        } else null
         overlay.update(subject, guidance, statsLine)
 
         if (guidance.shoot && !wasShoot) {

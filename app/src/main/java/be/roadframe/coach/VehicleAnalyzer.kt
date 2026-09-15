@@ -49,6 +49,12 @@ class VehicleAnalyzer(
     /** "GPU" or "CPU": what actually runs, after any fallback. */
     val delegateName: String
 
+    /** Frames handed to the detector and results that came back; diagnostics for the stats line. */
+    @Volatile var framesSubmitted = 0L
+        private set
+    @Volatile var resultsReceived = 0L
+        private set
+
     init {
         var created: ObjectDetector? = null
         var name = "CPU"
@@ -88,6 +94,7 @@ class VehicleAnalyzer(
             return
         }
         lastSubmittedAt = now
+        framesSubmitted++
 
         try {
             val rotation = imageProxy.imageInfo.rotationDegrees
@@ -133,6 +140,7 @@ class VehicleAnalyzer(
         }
         try {
             if (frame == null) return
+            resultsReceived++
             val detections = result.detections().mapNotNull { detection ->
                 val category = detection.categories().maxByOrNull { it.score() } ?: return@mapNotNull null
                 val kind = VehicleKind.fromModelLabel(category.categoryName()) ?: return@mapNotNull null

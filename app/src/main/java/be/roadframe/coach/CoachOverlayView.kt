@@ -207,7 +207,7 @@ class CoachOverlayView(context: Context) : View(context) {
     private fun textArea(landscape: Boolean): RectF = if (landscape) {
         RectF(dp(18f), height - dp(96f), (width - dp(370f)).coerceAtLeast(dp(320f)), height - dp(58f))
     } else {
-        RectF(dp(18f), height - dp(236f), width - dp(18f), height - dp(200f))
+        RectF(dp(18f), height - dp(252f), width - dp(18f), height - dp(216f))
     }
 
     private fun drawTarget(canvas: Canvas, box: NormalizedBox) {
@@ -337,10 +337,11 @@ class CoachOverlayView(context: Context) : View(context) {
             canvas.drawText(text, 0, text.length, textArea.centerX(), line, metaPaint)
             line += dp(16f)
         }
-        statsLine?.let {
+        statsLine?.split('\n')?.forEach { part ->
             metaPaint.color = Color.argb(170, 247, 249, 250)
-            val text = TextUtils.ellipsize(it, metaPaint, textArea.width(), TextUtils.TruncateAt.END)
+            val text = TextUtils.ellipsize(part, metaPaint, textArea.width(), TextUtils.TruncateAt.END)
             canvas.drawText(text, 0, text.length, textArea.centerX(), line, metaPaint)
+            line += dp(15f)
         }
     }
 
